@@ -194,6 +194,7 @@ class HC_Blocks {
 		foreach (self::live_registry() as $id => $entry) {
 			is_wp_error(self::fetch($id, $entry['q'], $bust)) ? $fail++ : $ok++;
 		}
+		HC_Meta::refresh(); // keep the Bricks picker / cheat sheet lists current too
 		return ['refreshed' => $ok, 'failed' => $fail];
 	}
 
@@ -367,18 +368,54 @@ class HC_Blocks {
 
 	/* ---------------- Bricks dynamic tags ---------------- */
 
+	/**
+	 * Tags for the Bricks dynamic data picker, built from the hub's real placements and
+	 * content types: one group per placement / type ("Hub · home-hero"), one tag per field.
+	 * Uses the stored list; in the builder it's refreshed at most hourly (never for visitors).
+	 * Falls back to examples if the hub hasn't been reached yet.
+	 */
 	public static function bricks_list(array $tags): array {
-		foreach ([
-			'{hub:home-hero:title}'     => 'Hub: title (placement:field)',
-			'{hub:home-hero:html}'      => 'Hub: content',
-			'{hub:home-hero:image}'     => 'Hub: image',
-			'{hub:home-hero:cta_url}'   => 'Hub: button link',
-			'{hub:home-hero:cta_label}' => 'Hub: button text',
-			'{hub:home-blocks:title:2}' => 'Hub: 2nd item in a placement',
-			'{hub:type.news:title:1}'   => 'Hub: newest news item',
-		] as $name => $label) {
-			$tags[] = ['name' => $name, 'label' => $label, 'group' => 'Hub'];
+		$meta  = HC_Meta::get(HC_Meta::editor_may_fetch());
+		$place = HC_Meta::placements($meta);
+		$types = HC_Meta::types($meta);
+
+		$placement_fields = [
+			'title'     => __('Title', 'hub-client'),
+			'excerpt'   => __('Excerpt', 'hub-client'),
+			'html'      => __('Content (HTML)', 'hub-client'),
+			'image'     => __('Image', 'hub-client'),
+			'image_alt' => __('Image alt text', 'hub-client'),
+			'cta_label' => __('Button text', 'hub-client'),
+			'cta_url'   => __('Button link', 'hub-client'),
+		];
+		$type_fields = [
+			'title'   => __('Title (newest)', 'hub-client'),
+			'excerpt' => __('Excerpt (newest)', 'hub-client'),
+			'image'   => __('Image (newest)', 'hub-client'),
+			'link'    => __('Article page link (newest)', 'hub-client'),
+			'date'    => __('Date (newest)', 'hub-client'),
+		];
+
+		if (!$place && !$types) {
+			$place = ['home-hero' => 'home-hero'];
+			$types = ['news' => 'news'];
 		}
+		foreach ($place as $slug => $name) {
+			$group = sprintf('Hub · %s', $name);
+			foreach ($placement_fields as $field => $label) {
+				$tags[] = ['name' => '{hub:' . $slug . ':' . $field . '}', 'label' => $label, 'group' => $group];
+			}
+		}
+		foreach ($types as $slug => $name) {
+			$group = sprintf('Hub · %s (%s)', $name, __('content type', 'hub-client'));
+			foreach ($type_fields as $field => $label) {
+				$tags[] = ['name' => '{hub:type.' . $slug . ':' . $field . '}', 'label' => $label, 'group' => $group];
+			}
+		}
+		// How-to entries for the index / language suffixes.
+		$first = (string) (array_key_first($place) ?: 'home-blocks');
+		$tags[] = ['name' => '{hub:' . $first . ':title:2}', 'label' => __('2nd item — add :2, :3 … to any tag', 'hub-client'), 'group' => 'Hub · tips'];
+		$tags[] = ['name' => '{hub:' . $first . ':title:1:en}', 'label' => __('Fixed language — add :1:en to any tag', 'hub-client'), 'group' => 'Hub · tips'];
 		return $tags;
 	}
 

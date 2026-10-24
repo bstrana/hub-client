@@ -18,15 +18,9 @@ class HC_Cheatsheet {
 		});
 	}
 
-	/** Placements, types and languages from the hub — fetched when an editor opens this page, kept 1 hour. */
+	/** Placements, types and languages from the hub — opening this page refreshes them if over an hour old. */
 	private static function meta(): array {
-		$m = get_transient('hub_client_meta');
-		if (is_array($m)) return $m;
-		$r = HC_API::get('/meta');
-		if (is_wp_error($r)) return ['error' => $r->get_error_message()];
-		$m = (array) $r['data'];
-		set_transient('hub_client_meta', $m, HOUR_IN_SECONDS);
-		return $m;
+		return HC_Meta::get(true);
 	}
 
 	public static function render(): void {

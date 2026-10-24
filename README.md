@@ -21,7 +21,9 @@ When something renders empty, log in as an administrator and open the page (or t
 
 ### Bricks dynamic tags
 
-Listed in the dynamic data picker under **Hub**:
+In the dynamic data picker, each of your hub's placements and content types has its own group — **Hub · home-hero**, **Hub · news (content type)** … — with a ready tag per field (Title, Excerpt, Content, Image, Button text, Button link; for content types the newest item's Title, Image, Article page link, Date). The list comes from the hub, is refreshed at most hourly while you're in the builder (or with *Refresh sections now*), and is never fetched for visitors. Add `:2`, `:3` for later items and `:1:en` for a fixed language — see **Hub · tips**.
+
+The tag format:
 
 ```
 {hub:<placement>:<field>}                 {hub:home-hero:title}
