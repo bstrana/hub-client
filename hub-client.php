@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Hub Client
  * Description:       Hub content on this site: [hub] shortcodes and {hub:…} Bricks tags for page sections, plus local copies of hub articles with their own URLs, templates, SEO and sitemaps. Updated instantly by signed webhooks.
- * Version:           0.5.0
+ * Version:           0.5.1
  * Requires at least: 6.3
  * Requires PHP:      8.0
  * Author:            Tom
@@ -14,7 +14,7 @@
 
 defined('ABSPATH') || exit;
 
-define('HUB_CLIENT_VERSION', '0.5.0');
+define('HUB_CLIENT_VERSION', '0.5.1');
 define('HUB_CLIENT_DIR', plugin_dir_path(__FILE__));
 
 require_once HUB_CLIENT_DIR . 'includes/class-hc-api.php';
@@ -74,6 +74,7 @@ function hub_client_opt(string $key) {
 		'copy_images'  => 1,       // copy section images into this site's media library (on refresh, never on page views)
 		'rev_copies'   => 0,       // revisions kept for hub article copies (history lives on the hub); -1 = unlimited
 		'rev_other'    => '',      // revisions for all other posts/pages; '' = WordPress default
+		'lang_mode'    => 'visitor', // sections on untranslated pages: 'visitor' (selected language) or 'site'
 	];
 	$o = get_option('hub_client', []);
 	return $o[$key] ?? $defaults[$key] ?? null;

@@ -41,6 +41,7 @@ class HC_Admin {
 			'purge_cache'  => empty($in['purge_cache']) ? 0 : 1,
 			'copy_images'  => empty($in['copy_images']) ? 0 : 1,
 			'rev_copies'   => max(-1, (int) ($in['rev_copies'] ?? 0)),
+			'lang_mode'    => ($in['lang_mode'] ?? '') === 'site' ? 'site' : 'visitor',
 			'rev_other'    => trim((string) ($in['rev_other'] ?? '')) === '' ? '' : max(-1, (int) $in['rev_other']),
 		];
 	}
@@ -83,7 +84,7 @@ class HC_Admin {
 	public static function render(): void {
 		$o = wp_parse_args((array) get_option('hub_client', []), [
 			'hub_url' => '', 'site' => '', 'api_key' => '', 'secret' => '', 'types' => 'news', 'langs' => '',
-			'store_as' => 'post', 'cpt_slug' => 'novosti', 'author' => 0, 'editor_fetch' => 1, 'nightly' => 0, 'purge_cache' => 1, 'copy_images' => 1, 'rev_copies' => 0, 'rev_other' => '',
+			'store_as' => 'post', 'cpt_slug' => 'novosti', 'author' => 0, 'editor_fetch' => 1, 'nightly' => 0, 'purge_cache' => 1, 'copy_images' => 1, 'rev_copies' => 0, 'rev_other' => '', 'lang_mode' => 'visitor',
 		]);
 		$n = fn($k) => esc_attr("hub_client[$k]");
 		if (!empty($_GET['hc_msg'])) {
@@ -122,7 +123,13 @@ class HC_Admin {
 						<p class="description"><?php esc_html_e('Hub content types that become articles here, comma-separated. Empty = everything for this site. Blocks like heroes and sidebars stay API-only.', 'hub-client'); ?></p></td></tr>
 					<tr><th><label for="hc_langs"><?php esc_html_e('Languages to keep', 'hub-client'); ?></label></th>
 						<td><input id="hc_langs" type="text" class="regular-text" name="<?php echo $n('langs'); ?>" value="<?php echo esc_attr($o['langs']); ?>" placeholder="hr,en">
-						<p class="description"><?php esc_html_e('Empty = all hub languages. With Polylang on this site, versions are linked as translations.', 'hub-client'); ?></p></td></tr>
+						<p class="description"><?php esc_html_e('Empty = all hub languages. With Polylang on this site, versions are linked as translations.', 'hub-client'); ?><br><?php esc_html_e('The first one is this site\'s language.', 'hub-client'); ?></p></td></tr>
+					<tr><th><?php esc_html_e('Section language', 'hub-client'); ?></th>
+						<td>
+							<label><input type="radio" name="hub_client[lang_mode]" value="visitor" <?php checked($o['lang_mode'] !== 'site'); ?>> <?php esc_html_e('Follow the visitor\'s selected language', 'hub-client'); ?></label><br>
+							<label><input type="radio" name="hub_client[lang_mode]" value="site" <?php checked($o['lang_mode'], 'site'); ?>> <?php esc_html_e('Always this site\'s language', 'hub-client'); ?></label>
+							<p class="description"><?php esc_html_e('For pages that are not translated in Polylang/WPML: one page, hub content in the language the visitor chose — with the Polylang/WPML language switcher, or [hub_lang_switch] which stays on the same page. Translated pages always show their own language. Search engines see the site language. Views in other languages are not page-cached (WP Rocket keeps a separate cache per language; other cache plugins: add the cookies hub_lang and pll_language to their "vary" or "don\'t cache" cookie list).', 'hub-client'); ?></p>
+						</td></tr>
 					<tr><th><?php esc_html_e('Store as', 'hub-client'); ?></th>
 						<td>
 							<label><input type="radio" name="<?php echo $n('store_as'); ?>" value="post" <?php checked($o['store_as'], 'post'); ?>> <?php esc_html_e('Posts (content types become categories)', 'hub-client'); ?></label><br>

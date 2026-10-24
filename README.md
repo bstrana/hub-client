@@ -45,7 +45,7 @@ The tag format:
 | `[hub placement="home-hero" field="title"]` | one field of the first item in a placement |
 | `[hub placement="home-blocks" index="2" field="excerpt"]` | the 2nd item (hub *Order*) |
 | `[hub type="news" field="title"]` | newest item of a content type |
-| `[hub placement="home-hero" field="title" lang="en"]` | a specific language (default: the page's Polylang/WPML language, else the first in *Languages to keep*) |
+| `[hub placement="home-hero" field="title" lang="en"]` | a specific language (default: see *Which language* below) |
 | `[hub … default="—"]` | text when there's nothing |
 | `[hub_image placement="home-hero" size="large" class="hero-img" loading="eager"]` | a complete `<img>` with srcset and alt; sizes `thumbnail`, `medium`, `medium_large`, `large`, `full` |
 | `[hub_link placement="home-hero" class="btn"]` | a complete button link: `cta_url` with `cta_label` as text |
@@ -93,6 +93,21 @@ Latest news linking to the local article pages:
   <li>[hub_link to="article" text="title"] <time>[hub field="date"]</time></li>
 [/hub_loop]
 ```
+
+### Which language
+
+Content is written and translated **only on the hub**; pages here hold the layout. The language of hub sections:
+
+1. `lang="…"` on the shortcode or `:1:en` on the tag — always wins;
+2. a page **translated** with Polylang/WPML (it has language versions) shows its own language;
+3. any other page — Settings → Hub client → **Section language**:
+   - **Follow the visitor's selected language** (default): one page, hub content in the language the visitor picked. The choice comes in as `?hub_lang=en` and is remembered in the `hub_lang` cookie. Links: `[hub_lang_switch]` (`labels="hr:HR,en:EN"`), or the Polylang switcher — on untranslated pages its links are changed to stay on the same page. (Polylang's own `pll_language` cookie isn't used: Polylang resets it to the page's language on every view.)
+   - **Always this site's language**.
+4. the site's language: the first of **Languages to keep**, else the Polylang/WPML default.
+
+Caching and SEO with "visitor's language": views in another language than the site's send `Cache-Control: private, no-cache` and `DONOTCACHEPAGE` (WP Rocket keeps a separate cache per `hub_lang` value; for LiteSpeed/others add the `hub_lang` cookie to their vary / no-cache cookie list). Search engines see the site language; for the other language to be indexed it needs its own URLs (translated pages in Polylang).
+
+Polylang isn't required for this. You need it only for: text that isn't from the hub (menus, footer, texts typed in Bricks) in several languages; separate URLs per language for SEO; or keeping article copies in several languages apart (archives, sitemaps, `/en/` URLs).
 
 ### Cheat sheet
 

@@ -38,6 +38,13 @@ class HC_Blocks {
 		add_shortcode('hub_loop', [__CLASS__, 'sc_loop']);
 		add_shortcode('hub_link', [__CLASS__, 'sc_link']);
 		add_shortcode('hub_map', [__CLASS__, 'sc_map']);
+		add_shortcode('hub_lang_switch', [__CLASS__, 'sc_lang_switch']);
+		add_action('init', [__CLASS__, 'visitor_lang_request']);
+		add_action('template_redirect', [__CLASS__, 'maybe_nocache']);
+		// WP Rocket: separate cache files per selected language.
+		add_filter('rocket_cache_dynamic_cookies', fn($c) => hub_client_opt('lang_mode') === 'site' ? $c : array_merge((array) $c, ['hub_lang']));
+		// Polylang's switcher on an untranslated page: stay on this page, switch the hub content.
+		add_filter('pll_the_language_link', [__CLASS__, 'pll_switch_link'], 20, 2);
 		add_action(self::EVENT_HOOK, [__CLASS__, 'on_event_ended']);
 
 		// Bricks dynamic data. Harmless when Bricks isn't installed.
@@ -68,13 +75,148 @@ class HC_Blocks {
 		update_option(self::STORE, $store, false);
 	}
 
+	/**
+	 * Language of hub content on this page:
+	 *   1. lang="…" on the shortcode / tag
+	 *   2. a page translated with Polylang/WPML (it has language versions): that page's language
+	 *   3. any other page — setting "Section language":
+	 *        visitor (default): the language the visitor selected — ?hub_lang=en, remembered in
+	 *                 the hub_lang cookie (set by the Polylang switcher on such pages, or
+	 *                 [hub_lang_switch]); else the site's language. Polylang's own pll_language
+	 *                 cookie is NOT used: Polylang resets it to the page's language on every view.
+	 *        site:    always the site's language
+	 *   4. archives on a multilingual site: the language in the URL
+	 *   5. the site's language: first of "Languages to keep", else the Polylang/WPML default
+	 */
 	public static function current_lang(string $attr = ''): string {
 		if ($attr !== '') return sanitize_key($attr);
-		if (function_exists('pll_current_language') && ($l = pll_current_language('slug'))) return (string) $l;
-		$wpml = apply_filters('wpml_current_language', null);
-		if (is_string($wpml) && $wpml !== '') return $wpml;
+		static $memo = null;
+		if ($memo !== null && did_action('wp')) return $memo;
+
+		$id = 0;
+		if (is_singular()) {
+			$id = (int) get_queried_object_id();
+		} elseif (!did_action('wp') || wp_doing_ajax() || (defined('REST_REQUEST') && REST_REQUEST)) {
+			$id = (int) get_the_ID(); // Bricks builder / REST render: the post being edited
+		}
+		$lang = '';
+		if ($id) {
+			[$own, $versions] = self::post_lang($id);
+			if ($own !== '' && $versions > 1) {
+				$lang = $own; // a translated page shows its own language
+			} elseif (hub_client_opt('lang_mode') !== 'site') {
+				$lang = self::visitor_lang();
+			}
+		} elseif (did_action('wp') && !is_admin()) {
+			if (function_exists('pll_current_language') && ($l = pll_current_language('slug'))) $lang = (string) $l;
+			$wpml = apply_filters('wpml_current_language', null);
+			if ($lang === '' && is_string($wpml)) $lang = $wpml;
+			if (hub_client_opt('lang_mode') !== 'site' && ($v = self::visitor_lang(false)) !== '') $lang = $v;
+		}
+		$lang = $lang !== '' ? $lang : self::site_lang();
+		if (did_action('wp')) $memo = $lang;
+		return $lang;
+	}
+
+	/** [language of the post, number of language versions] from Polylang / WPML. */
+	private static function post_lang(int $id): array {
+		if (function_exists('pll_get_post_language')) {
+			$own = (string) (pll_get_post_language($id, 'slug') ?: '');
+			$n   = function_exists('pll_get_post_translations') ? count(array_filter((array) pll_get_post_translations($id))) : 1;
+			return [$own, $n];
+		}
+		$d = apply_filters('wpml_post_language_details', null, $id);
+		if (is_array($d) && !empty($d['language_code'])) {
+			$type = apply_filters('wpml_element_type', get_post_type($id));
+			$trid = apply_filters('wpml_element_trid', null, $id, $type);
+			$tr   = $trid ? (array) apply_filters('wpml_get_element_translations', null, $trid, $type) : [];
+			return [(string) $d['language_code'], max(1, count($tr))];
+		}
+		return ['', 0];
+	}
+
+	/** Languages a visitor may pick: Languages to keep, else Polylang's / WPML's list. */
+	public static function site_langs(): array {
 		$langs = hub_client_csv('langs');
-		return $langs[0] ?? '';
+		if (!$langs && function_exists('pll_languages_list')) $langs = (array) pll_languages_list(['fields' => 'slug']);
+		if (!$langs) {
+			$w = apply_filters('wpml_active_languages', null, ['skip_missing' => 0]);
+			if (is_array($w)) $langs = array_keys($w);
+		}
+		return array_values(array_map('strval', $langs));
+	}
+
+	/**
+	 * The visitor's selected language, or '' if none.
+	 * ?hub_lang=xx (also stored in the hub_lang cookie) > hub_lang cookie.
+	 */
+	public static function visitor_lang(bool $use_cookies = true): string {
+		$ok   = self::site_langs();
+		$pick = fn($v) => ($v = sanitize_key((string) $v)) !== '' && (!$ok || in_array($v, $ok, true)) ? $v : '';
+		if (isset($_GET['hub_lang']) && ($l = $pick(wp_unslash($_GET['hub_lang']))) !== '') return $l;
+		if (!$use_cookies) return '';
+		return isset($_COOKIE['hub_lang']) ? $pick(wp_unslash($_COOKIE['hub_lang'])) : '';
+	}
+
+	/** ?hub_lang=xx: remember the choice; pages in another language than the site's aren't page-cached. */
+	public static function visitor_lang_request(): void {
+		if (is_admin() || hub_client_opt('lang_mode') === 'site') return;
+		$l = self::visitor_lang(false);
+		if ($l !== '' && !headers_sent() && ($_COOKIE['hub_lang'] ?? '') !== $l) {
+			setcookie('hub_lang', $l, ['expires' => time() + YEAR_IN_SECONDS, 'path' => COOKIEPATH ?: '/', 'secure' => is_ssl(), 'httponly' => false, 'samesite' => 'Lax']);
+			$_COOKIE['hub_lang'] = $l;
+		}
+	}
+
+	/** After the page is known: if hub sections may follow the visitor, keep other languages out of the page cache. */
+	public static function maybe_nocache(): void {
+		if (is_admin() || hub_client_opt('lang_mode') === 'site') return;
+		$v = self::visitor_lang();
+		if ($v !== '' && $v !== self::site_lang() && !defined('DONOTCACHEPAGE')) {
+			define('DONOTCACHEPAGE', true);           // WP Rocket, W3TC, WP Super Cache, Cache Enabler, …
+			do_action('litespeed_control_set_nocache', 'hub client: visitor language');
+			if (!headers_sent()) header('Cache-Control: private, no-cache');
+		}
+	}
+
+	/** Polylang switcher link for a language this page has no translation in → same page, ?hub_lang=xx. */
+	public static function pll_switch_link($url, $slug) {
+		if (hub_client_opt('lang_mode') === 'site' || !is_singular()) return $url;
+		$id = (int) get_queried_object_id();
+		[$own, $versions] = self::post_lang($id);
+		if ($versions > 1 && function_exists('pll_get_post') && pll_get_post($id, (string) $slug)) return $url; // a real translation exists
+		$here = get_permalink($id);
+		return add_query_arg('hub_lang', (string) $slug, $here); // also for the site language, so the cookie switches back
+	}
+
+	/**
+	 * [hub_lang_switch] — links that switch hub content on this same page.
+	 *   [hub_lang_switch]  [hub_lang_switch labels="hr:HR,en:EN" class="lang-switch"]
+	 */
+	public static function sc_lang_switch($atts): string {
+		$a = shortcode_atts(['labels' => '', 'class' => 'hub-lang-switch', 'sep' => ' '], $atts, 'hub_lang_switch');
+		$labels = [];
+		foreach (array_filter(array_map('trim', explode(',', $a['labels']))) as $pair) {
+			[$k, $v] = array_pad(explode(':', $pair, 2), 2, '');
+			if ($k !== '') $labels[sanitize_key($k)] = $v !== '' ? $v : strtoupper($k);
+		}
+		$cur = self::current_lang();
+		$out = [];
+		foreach (self::site_langs() as $l) {
+			$url = add_query_arg('hub_lang', $l, remove_query_arg('hub_lang'));
+			$out[] = sprintf('<a href="%s" hreflang="%s"%s>%s</a>', esc_url($url), esc_attr($l), $l === $cur ? ' class="current" aria-current="true"' : '', esc_html($labels[$l] ?? strtoupper($l)));
+		}
+		return $out ? '<nav class="' . esc_attr($a['class']) . '">' . implode(esc_html($a['sep']), $out) . '</nav>' : '';
+	}
+
+	/** This site's default language for hub content. */
+	public static function site_lang(): string {
+		$langs = hub_client_csv('langs');
+		if ($langs) return $langs[0];
+		// With Polylang/WPML the site language is their default language.
+		if (function_exists('pll_default_language') && ($l = pll_default_language('slug'))) return (string) $l;
+		$wpml = apply_filters('wpml_default_language', null);
+		return is_string($wpml) ? $wpml : '';
 	}
 
 	/** Normalised API query for a section, or null if it names no source. */
