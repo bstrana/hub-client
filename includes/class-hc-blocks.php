@@ -68,13 +68,46 @@ class HC_Blocks {
 		update_option(self::STORE, $store, false);
 	}
 
+	/**
+	 * Language of hub content on this page, decided by the PAGE, never by the visitor:
+	 *   1. lang="…" on the shortcode / tag
+	 *   2. the language the page itself has in Polylang / WPML (a translated page)
+	 *   3. archives on a multilingual site: the language in the URL
+	 *   4. otherwise this site's default: the first of "Languages to keep",
+	 *      else Polylang's / WPML's default language
+	 * A page with no language of its own therefore always shows the same language, whoever
+	 * looks at it — Polylang's per-visitor language (cookie, browser) is never used, so a
+	 * page cache can't store one visitor's language for everyone.
+	 */
 	public static function current_lang(string $attr = ''): string {
 		if ($attr !== '') return sanitize_key($attr);
-		if (function_exists('pll_current_language') && ($l = pll_current_language('slug'))) return (string) $l;
-		$wpml = apply_filters('wpml_current_language', null);
-		if (is_string($wpml) && $wpml !== '') return $wpml;
+
+		$id = 0;
+		if (is_singular()) {
+			$id = (int) get_queried_object_id();
+		} elseif (!did_action('wp') || wp_doing_ajax() || (defined('REST_REQUEST') && REST_REQUEST)) {
+			$id = (int) get_the_ID(); // Bricks builder / REST render: the post being edited
+		}
+		if ($id) {
+			if (function_exists('pll_get_post_language') && ($l = pll_get_post_language($id, 'slug'))) return (string) $l;
+			$wpml = apply_filters('wpml_post_language_details', null, $id);
+			if (is_array($wpml) && !empty($wpml['language_code'])) return (string) $wpml['language_code'];
+		} elseif (did_action('wp') && !is_singular() && !is_admin()) {
+			// Archives (category, news archive …): the language comes from the URL there.
+			if (function_exists('pll_current_language') && ($l = pll_current_language('slug'))) return (string) $l;
+			$wpml = apply_filters('wpml_current_language', null);
+			if (is_string($wpml) && $wpml !== '') return $wpml;
+		}
+		return self::site_lang();
+	}
+
+	/** This site's default language for hub content. */
+	public static function site_lang(): string {
 		$langs = hub_client_csv('langs');
-		return $langs[0] ?? '';
+		if ($langs) return $langs[0];
+		if (function_exists('pll_default_language') && ($l = pll_default_language('slug'))) return (string) $l;
+		$wpml = apply_filters('wpml_default_language', null);
+		return is_string($wpml) ? $wpml : '';
 	}
 
 	/** Normalised API query for a section, or null if it names no source. */
