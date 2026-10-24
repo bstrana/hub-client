@@ -734,7 +734,7 @@ class HC_Blocks {
 	 * Guessed from the slug; adjust with the hub_client_event_types filter.
 	 */
 	public static function event_types(array $slugs): array {
-		$guess = array_values(array_filter($slugs, fn($s) => (bool) preg_match('/event|dogad|turnir|tournament|kamp|camp|utakmic|match|game|trening/i', $s)));
+		$guess = array_values(array_filter($slugs, fn($s) => (bool) preg_match('/event|dogad|termin|turnir|tournament|kamp|camp|utakmic|match|game|trening|workshop|radionic|webinar|course|tecaj|tečaj|concert|koncert|meetup|conference|konferencij|predavanj|lecture|show|festival|sajam|fair/i', $s)));
 		return (array) apply_filters('hub_client_event_types', $guess, $slugs);
 	}
 
