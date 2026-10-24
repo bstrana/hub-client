@@ -153,6 +153,15 @@ If the hub sets an article's **Canonical site** to another site:
 
 Articles whose canonical site is this site, or that have none, are untouched.
 
+## Revisions
+
+Settings → Hub client → **Revisions**:
+
+- **Hub article copies keep** — default **0**. Their history lives on the hub, and every hub edit rewrites the copy, so revisions here would only fill the database. `-1` = unlimited.
+- **All other posts and pages keep** — empty = WordPress default (`WP_POST_REVISIONS`, usually unlimited). A value like `10` keeps the database small and still lets you go back. This setting wins over `WP_POST_REVISIONS` in `wp-config.php`.
+
+Lowering a limit also removes existing extra revisions (oldest first) in the background a minute after saving; or click **Clean up revisions now**, or run `wp hub-client revisions [--dry-run]`. Autosaves are never deleted (they count toward the limit, as in WordPress).
+
 ## Security
 
 - Webhooks must carry a valid `X-Hub-Signature` (HMAC-SHA256 over timestamp + body with the shared secret), a timestamp within 5 minutes, and this site's slug. Each signature is accepted once.
@@ -168,6 +177,7 @@ wp hub-client test              # check connection and that this site exists on 
 wp hub-client sync [--full]     # pull article changes (or re-check everything) and trash removed items
 wp hub-client refresh           # re-fetch every page section in use
 wp hub-client windows           # apply show-from / show-until now
+wp hub-client revisions [--dry-run]  # remove revisions beyond the limits
 ```
 
 ## Notes
