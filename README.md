@@ -45,7 +45,7 @@ The tag format:
 | `[hub placement="home-hero" field="title"]` | one field of the first item in a placement |
 | `[hub placement="home-blocks" index="2" field="excerpt"]` | the 2nd item (hub *Order*) |
 | `[hub type="news" field="title"]` | newest item of a content type |
-| `[hub placement="home-hero" field="title" lang="en"]` | a specific language (default: the page's Polylang/WPML language, else the first in *Languages to keep*) |
+| `[hub placement="home-hero" field="title" lang="en"]` | a specific language (default: see *Which language* below) |
 | `[hub … default="—"]` | text when there's nothing |
 | `[hub_image placement="home-hero" size="large" class="hero-img" loading="eager"]` | a complete `<img>` with srcset and alt; sizes `thumbnail`, `medium`, `medium_large`, `large`, `full` |
 | `[hub_link placement="home-hero" class="btn"]` | a complete button link: `cta_url` with `cta_label` as text |
@@ -93,6 +93,17 @@ Latest news linking to the local article pages:
   <li>[hub_link to="article" text="title"] <time>[hub field="date"]</time></li>
 [/hub_loop]
 ```
+
+### Which language
+
+Content is written and translated **only on the hub**; pages here hold the layout. The language of hub sections on a page is decided by the page, never by the visitor:
+
+1. `lang="…"` on the shortcode or `:1:en` on the tag;
+2. the page's own language, if it's a page translated with Polylang/WPML;
+3. on archives of a multilingual site, the language in the URL;
+4. otherwise this site's language: the first of **Languages to keep** (else Polylang's/WPML's default).
+
+So a single, untranslated page always shows the same language to everyone (and a page cache stores the right one). For a site in one language, just put that language first in *Languages to keep*. For a site in two languages, each language needs its own URL: either translated pages in Polylang (duplicate the Bricks page — there's no text to translate, the hub fills it), or fixed `lang` per section.
 
 ### Cheat sheet
 

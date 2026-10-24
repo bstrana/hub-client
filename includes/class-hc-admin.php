@@ -122,7 +122,7 @@ class HC_Admin {
 						<p class="description"><?php esc_html_e('Hub content types that become articles here, comma-separated. Empty = everything for this site. Blocks like heroes and sidebars stay API-only.', 'hub-client'); ?></p></td></tr>
 					<tr><th><label for="hc_langs"><?php esc_html_e('Languages to keep', 'hub-client'); ?></label></th>
 						<td><input id="hc_langs" type="text" class="regular-text" name="<?php echo $n('langs'); ?>" value="<?php echo esc_attr($o['langs']); ?>" placeholder="hr,en">
-						<p class="description"><?php esc_html_e('Empty = all hub languages. With Polylang on this site, versions are linked as translations.', 'hub-client'); ?></p></td></tr>
+						<p class="description"><?php esc_html_e('Empty = all hub languages. With Polylang on this site, versions are linked as translations.', 'hub-client'); ?><br><?php esc_html_e('The first one is this site\'s language for hub sections on pages that have no language of their own (e.g. a single, untranslated page). A page translated with Polylang/WPML shows its own language.', 'hub-client'); ?></p></td></tr>
 					<tr><th><?php esc_html_e('Store as', 'hub-client'); ?></th>
 						<td>
 							<label><input type="radio" name="<?php echo $n('store_as'); ?>" value="post" <?php checked($o['store_as'], 'post'); ?>> <?php esc_html_e('Posts (content types become categories)', 'hub-client'); ?></label><br>
