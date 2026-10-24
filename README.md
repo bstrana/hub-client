@@ -96,14 +96,18 @@ Latest news linking to the local article pages:
 
 ### Which language
 
-Content is written and translated **only on the hub**; pages here hold the layout. The language of hub sections on a page is decided by the page, never by the visitor:
+Content is written and translated **only on the hub**; pages here hold the layout. The language of hub sections:
 
-1. `lang="…"` on the shortcode or `:1:en` on the tag;
-2. the page's own language, if it's a page translated with Polylang/WPML;
-3. on archives of a multilingual site, the language in the URL;
-4. otherwise this site's language: the first of **Languages to keep** (else Polylang's/WPML's default).
+1. `lang="…"` on the shortcode or `:1:en` on the tag — always wins;
+2. a page **translated** with Polylang/WPML (it has language versions) shows its own language;
+3. any other page — Settings → Hub client → **Section language**:
+   - **Follow the visitor's selected language** (default): one page, hub content in the language the visitor picked. The choice comes in as `?hub_lang=en` and is remembered in the `hub_lang` cookie. Links: `[hub_lang_switch]` (`labels="hr:HR,en:EN"`), or the Polylang switcher — on untranslated pages its links are changed to stay on the same page. (Polylang's own `pll_language` cookie isn't used: Polylang resets it to the page's language on every view.)
+   - **Always this site's language**.
+4. the site's language: the first of **Languages to keep**, else the Polylang/WPML default.
 
-So a single, untranslated page always shows the same language to everyone (and a page cache stores the right one). For a site in one language, just put that language first in *Languages to keep*. For a site in two languages, each language needs its own URL: either translated pages in Polylang (duplicate the Bricks page — there's no text to translate, the hub fills it), or fixed `lang` per section.
+Caching and SEO with "visitor's language": views in another language than the site's send `Cache-Control: private, no-cache` and `DONOTCACHEPAGE` (WP Rocket keeps a separate cache per `hub_lang` value; for LiteSpeed/others add the `hub_lang` cookie to their vary / no-cache cookie list). Search engines see the site language; for the other language to be indexed it needs its own URLs (translated pages in Polylang).
+
+Polylang isn't required for this. You need it only for: text that isn't from the hub (menus, footer, texts typed in Bricks) in several languages; separate URLs per language for SEO; or keeping article copies in several languages apart (archives, sitemaps, `/en/` URLs).
 
 ### Cheat sheet
 

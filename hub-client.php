@@ -74,6 +74,7 @@ function hub_client_opt(string $key) {
 		'copy_images'  => 1,       // copy section images into this site's media library (on refresh, never on page views)
 		'rev_copies'   => 0,       // revisions kept for hub article copies (history lives on the hub); -1 = unlimited
 		'rev_other'    => '',      // revisions for all other posts/pages; '' = WordPress default
+		'lang_mode'    => 'visitor', // sections on untranslated pages: 'visitor' (selected language) or 'site'
 	];
 	$o = get_option('hub_client', []);
 	return $o[$key] ?? $defaults[$key] ?? null;
