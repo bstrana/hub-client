@@ -30,6 +30,17 @@ class HC_Sync {
 		add_filter('rank_math/frontend/robots', [__CLASS__, 'seo_robots_rankmath'], 20);
 		add_filter('wp_sitemaps_posts_query_args', [__CLASS__, 'sitemap_core'], 20);
 		add_filter('wpseo_exclude_from_sitemap_by_post_ids', [__CLASS__, 'sitemap_ids'], 20);
+
+		// SEO title / description from the hub (Yoast, Rank Math, SEOPress get their own fields on sync).
+		add_filter('pre_get_document_title', [__CLASS__, 'seo_title_core'], 20);
+		add_filter('aioseo_title', [__CLASS__, 'seo_title'], 20);
+		add_filter('aioseo_description', [__CLASS__, 'seo_description'], 20);
+		add_action('wp_head', [__CLASS__, 'seo_head'], 5);
+	}
+
+	/** Core document title, only when no SEO plugin manages titles. */
+	public static function seo_title_core($title) {
+		return self::seo_plugin() ? $title : self::seo_title($title);
 	}
 
 	/* ---------------- SEO: articles whose canonical home is another site ---------------- */
@@ -215,6 +226,11 @@ class HC_Sync {
 		];
 		if ($local) $postarr['ID'] = $local;
 
+		// SEO plugin fields go in with the save itself, so the plugin's own save hooks
+		// (e.g. Yoast's indexables) already see them.
+		$seo = self::seo_meta($item);
+		$postarr['meta_input'] = array_filter($seo, fn($v) => $v !== '' && $v !== 0);
+
 		// Content is stored as the hub rendered it. kses still applies for the
 		// (anonymous) webhook context, so a compromised hub can't inject scripts.
 		$id = $local ? wp_update_post(wp_slash($postarr), true) : wp_insert_post(wp_slash($postarr), true);
@@ -232,7 +248,20 @@ class HC_Sync {
 			'hub_cta_label'      => (string) ($item['cta_label'] ?? ''),
 			'hub_canonical_site' => (string) ($item['canonical_site'] ?? ''),
 			'hub_canonical_url'  => esc_url_raw((string) ($item['canonical_url'] ?? '')),
-		];
+			// Extra hub fields, for Bricks: {cf_hub_subtitle}, {cf_hub_event_start}, …
+			'hub_subtitle'       => (string) ($item['subtitle'] ?? ''),
+			'hub_badge'          => (string) ($item['badge'] ?? ''),
+			'hub_cta2_url'       => esc_url_raw((string) ($item['cta2_url'] ?? '')),
+			'hub_cta2_label'     => (string) ($item['cta2_label'] ?? ''),
+			'hub_image_focus'    => (string) ($item['image_focus'] ?? ''),
+			'hub_event_start'    => self::local_datetime((string) ($item['event_start'] ?? '')), // site time, sortable
+			'hub_event_end'      => self::local_datetime((string) ($item['event_end'] ?? '')),
+			'hub_location'       => (string) ($item['location'] ?? ''),
+			'hub_map_lat'        => isset($item['map_lat']) && is_numeric($item['map_lat']) ? (string) (float) $item['map_lat'] : '',
+			'hub_map_lng'        => isset($item['map_lng']) && is_numeric($item['map_lng']) ? (string) (float) $item['map_lng'] : '',
+			'hub_map_url'        => esc_url_raw((string) ($item['map_url'] ?? '')),
+			'hub_stream_url'     => esc_url_raw((string) ($item['stream_url'] ?? '')),
+		] + $seo;
 		foreach ($meta as $k => $v) {
 			($v === '' || $v === 0) ? delete_post_meta($id, $k) : update_post_meta($id, $k, $v);
 		}
@@ -269,6 +298,79 @@ class HC_Sync {
 		if ($a && get_userdata($a)) return $a;
 		$admins = get_users(['role' => 'administrator', 'number' => 1, 'fields' => 'ID', 'orderby' => 'ID']);
 		return $admins ? (int) $admins[0] : 0;
+	}
+
+	/** ISO date from the hub → 'Y-m-d H:i:s' in this site's timezone ('' if none). */
+	private static function local_datetime(string $iso): string {
+		$ts = $iso !== '' ? strtotime($iso) : false;
+		return $ts ? wp_date('Y-m-d H:i:s', $ts) : '';
+	}
+
+	/**
+	 * The hub's SEO title / description / social image for a copy: our own hub_seo_* fields,
+	 * plus the fields of the SEO plugin active here (Yoast, Rank Math, SEOPress). AIOSEO and
+	 * sites without an SEO plugin are served by filters (see seo_title()).
+	 * Empty values are returned too, so a field cleared on the hub is cleared here.
+	 */
+	private static function seo_meta(array $item): array {
+		$title = sanitize_text_field((string) ($item['seo_title'] ?? ''));
+		$desc  = sanitize_textarea_field((string) ($item['seo_description'] ?? ''));
+		$img   = is_array($item['seo_image'] ?? null) ? $item['seo_image'] : null;
+		$src   = $img ? (string) ($img['full'] ?? $img['url'] ?? '') : '';
+		$att   = $src !== '' ? HC_Media::local_id($src, (string) ($img['alt'] ?? '')) : 0;
+		$url   = $att ? (string) wp_get_attachment_url($att) : '';
+
+		$m = ['hub_seo_title' => $title, 'hub_seo_description' => $desc, 'hub_seo_image' => $att];
+		if (defined('WPSEO_VERSION')) {
+			$m += ['_yoast_wpseo_title' => $title, '_yoast_wpseo_metadesc' => $desc, '_yoast_wpseo_opengraph-image' => $url, '_yoast_wpseo_opengraph-image-id' => $att ? (string) $att : ''];
+		}
+		if (defined('RANK_MATH_VERSION')) {
+			$m += ['rank_math_title' => $title, 'rank_math_description' => $desc, 'rank_math_facebook_image' => $url, 'rank_math_facebook_image_id' => $att ? (string) $att : ''];
+		}
+		if (defined('SEOPRESS_VERSION')) {
+			$m += ['_seopress_titles_title' => $title, '_seopress_titles_desc' => $desc, '_seopress_social_fb_img' => $url];
+		}
+		return $m;
+	}
+
+	/** Is an SEO plugin handling titles and meta here? */
+	private static function seo_plugin(): bool {
+		return defined('WPSEO_VERSION') || defined('RANK_MATH_VERSION') || defined('SEOPRESS_VERSION') || defined('AIOSEO_VERSION');
+	}
+
+	private static function current_copy(): int {
+		if (!is_singular()) return 0;
+		$id = (int) get_queried_object_id();
+		return $id && get_post_meta($id, '_hub_id', true) ? $id : 0;
+	}
+
+	/** Document title for copies (no SEO plugin, or AIOSEO). */
+	public static function seo_title($title) {
+		$id = self::current_copy();
+		$t  = $id ? (string) get_post_meta($id, 'hub_seo_title', true) : '';
+		return $t !== '' ? $t : $title;
+	}
+
+	public static function seo_description($desc) {
+		$id = self::current_copy();
+		$d  = $id ? (string) get_post_meta($id, 'hub_seo_description', true) : '';
+		return $d !== '' ? $d : $desc;
+	}
+
+	/** Without an SEO plugin: meta description and basic Open Graph tags for copies. */
+	public static function seo_head(): void {
+		if (self::seo_plugin()) return;
+		$id = self::current_copy();
+		if (!$id) return;
+		$title = (string) get_post_meta($id, 'hub_seo_title', true) ?: get_the_title($id);
+		$desc  = (string) get_post_meta($id, 'hub_seo_description', true) ?: (string) get_the_excerpt($id);
+		$att   = (int) get_post_meta($id, 'hub_seo_image', true) ?: (int) get_post_thumbnail_id($id);
+		$img   = $att ? wp_get_attachment_image_src($att, 'full') : null;
+		$url   = self::canonical_info($id)['url'] ?: get_permalink($id);
+		if ($desc !== '') printf("<meta name=\"description\" content=\"%s\">\n", esc_attr(wp_strip_all_tags($desc)));
+		printf("<meta property=\"og:type\" content=\"article\">\n<meta property=\"og:title\" content=\"%s\">\n<meta property=\"og:url\" content=\"%s\">\n", esc_attr($title), esc_url($url));
+		if ($desc !== '') printf("<meta property=\"og:description\" content=\"%s\">\n", esc_attr(wp_strip_all_tags($desc)));
+		if ($img) printf("<meta property=\"og:image\" content=\"%s\">\n<meta property=\"og:image:width\" content=\"%d\">\n<meta property=\"og:image:height\" content=\"%d\">\n", esc_url($img[0]), (int) $img[1], (int) $img[2]);
 	}
 
 	/** Download the image into this site's media library (once per image URL). */

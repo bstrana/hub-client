@@ -40,6 +40,8 @@ class HC_Admin {
 			'nightly'      => empty($in['nightly']) ? 0 : 1,
 			'purge_cache'  => empty($in['purge_cache']) ? 0 : 1,
 			'copy_images'  => empty($in['copy_images']) ? 0 : 1,
+			'rev_copies'   => max(-1, (int) ($in['rev_copies'] ?? 0)),
+			'rev_other'    => trim((string) ($in['rev_other'] ?? '')) === '' ? '' : max(-1, (int) $in['rev_other']),
 		];
 	}
 
@@ -81,7 +83,7 @@ class HC_Admin {
 	public static function render(): void {
 		$o = wp_parse_args((array) get_option('hub_client', []), [
 			'hub_url' => '', 'site' => '', 'api_key' => '', 'secret' => '', 'types' => 'news', 'langs' => '',
-			'store_as' => 'post', 'cpt_slug' => 'novosti', 'author' => 0, 'editor_fetch' => 1, 'nightly' => 0, 'purge_cache' => 1, 'copy_images' => 1,
+			'store_as' => 'post', 'cpt_slug' => 'novosti', 'author' => 0, 'editor_fetch' => 1, 'nightly' => 0, 'purge_cache' => 1, 'copy_images' => 1, 'rev_copies' => 0, 'rev_other' => '',
 		]);
 		$n = fn($k) => esc_attr("hub_client[$k]");
 		if (!empty($_GET['hc_msg'])) {
@@ -136,6 +138,17 @@ class HC_Admin {
 							<label><input type="checkbox" name="hub_client[nightly]" value="1" <?php checked(!empty($o['nightly'])); ?>> <?php esc_html_e('Nightly safety check of articles (repairs missed webhooks; one set of calls per night)', 'hub-client'); ?></label><br>
 							<label><input type="checkbox" name="hub_client[copy_images]" value="1" <?php checked(!empty($o['copy_images'])); ?>> <?php esc_html_e('Copy section images to this site\'s media library (own domain, own image sizes and optimiser; done when content is refreshed, never on page views)', 'hub-client'); ?></label><br>
 							<label><input type="checkbox" name="hub_client[purge_cache]" value="1" <?php checked(!empty($o['purge_cache'])); ?>> <?php esc_html_e('Purge the page cache after a hub change (WP Rocket, LiteSpeed, W3TC, WP Super Cache, WP Fastest Cache, SiteGround, Breeze, Cache Enabler, Nginx Helper)', 'hub-client'); ?></label>
+						</td></tr>
+					<tr><th><?php esc_html_e('Revisions', 'hub-client'); ?></th>
+						<td>
+							<label><?php esc_html_e('Hub article copies keep', 'hub-client'); ?>
+								<input type="number" min="-1" step="1" class="small-text" name="hub_client[rev_copies]" value="<?php echo esc_attr((string) $o['rev_copies']); ?>"> <?php esc_html_e('revisions', 'hub-client'); ?></label>
+							<p class="description"><?php esc_html_e('0 = none (recommended: the hub keeps their history, and every hub edit would add one here). -1 = unlimited.', 'hub-client'); ?></p>
+							<label><?php esc_html_e('All other posts and pages keep', 'hub-client'); ?>
+								<input type="number" min="-1" step="1" class="small-text" name="hub_client[rev_other]" value="<?php echo esc_attr((string) $o['rev_other']); ?>" placeholder="<?php echo esc_attr((string) (defined('WP_POST_REVISIONS') ? (WP_POST_REVISIONS === true ? -1 : (int) WP_POST_REVISIONS) : -1)); ?>"> <?php esc_html_e('revisions', 'hub-client'); ?></label>
+							<p class="description"><?php esc_html_e('Empty = WordPress default (WP_POST_REVISIONS; shown greyed, -1 = unlimited). A value like 10 keeps the database small but still lets you go back to earlier versions.', 'hub-client'); ?></p>
+							<p class="description"><?php esc_html_e('Lowering a limit removes the extra old revisions in the background a minute after saving.', 'hub-client'); ?>
+								<a href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=hub_client_prune'), 'hub_client_prune')); ?>"><?php esc_html_e('Clean up revisions now', 'hub-client'); ?></a></p>
 						</td></tr>
 				</table>
 				<?php submit_button(); ?>

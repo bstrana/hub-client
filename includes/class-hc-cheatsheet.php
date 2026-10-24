@@ -30,9 +30,10 @@ class HC_Cheatsheet {
 		$langs = (array) ($meta['languages'] ?? []) ?: ['hr', 'en'];
 		$P = (string) array_key_first($place);
 		$T = isset($types['news']) ? 'news' : (string) array_key_first($types);
+		$E = (string) (HC_Blocks::event_types(array_keys($types))[0] ?? 'event');
 		$L = HC_Blocks::current_lang() ?: (string) ($langs[0] ?? 'hr');
 
-		// $rows: [code, what it does]. Tokens {P} {T} {L} are replaced live by the pickers.
+		// $rows: [code, what it does]. Tokens {P} {T} {E} {L} are replaced live by the pickers.
 		$bricks = [
 			['{hub:{P}:title}', __('Heading / Basic Text — title of the first item', 'hub-client')],
 			['{hub:{P}:excerpt}', __('Short text', 'hub-client')],
@@ -43,6 +44,15 @@ class HC_Cheatsheet {
 			['{hub:{P}:title:1:{L}}', __('A specific language', 'hub-client')],
 			['{hub:type.{T}:title:1}', __('Newest item of a content type', 'hub-client')],
 			['{hub:type.{T}:link:1}', __('Link to this site\'s page for the newest article', 'hub-client')],
+			['{hub:{P}:subtitle}', __('Subtitle', 'hub-client')],
+			['{hub:{P}:badge}', __('Badge text', 'hub-client')],
+			['{hub:{P}:cta2_label} / {hub:{P}:cta2_url}', __('Second button text / link', 'hub-client')],
+			['{hub:{P}:image_focus}', __('Image focal point — Image element → Style → Object position, or a custom CSS value', 'hub-client')],
+			['{hub:next.{E}:title}', __('Next upcoming event (soonest first, ended ones drop out)', 'hub-client')],
+			['{hub:next.{E}:event_date} {hub:next.{E}:event_time}', __('Its date and time (site formats)', 'hub-client')],
+			['{hub:next.{E}:location} / {hub:next.{E}:map_url}', __('Location / directions link', 'hub-client')],
+			['{hub:next.{E}:map_lat} {hub:next.{E}:map_lng}', __('Map element → coordinates', 'hub-client')],
+			['{hub:next.{E}:stream_url}', __('Live stream link', 'hub-client')],
 		];
 		$shortcodes = [
 			['[hub placement="{P}" field="title"]', __('One field of the first item', 'hub-client')],
@@ -56,6 +66,13 @@ class HC_Cheatsheet {
 			['[hub_link type="{T}" to="article" text="title"]', __('Link to this site\'s article page; text = a field or literal text', 'hub-client')],
 			['[hub_loop placement="{P}" limit="6"] … [/hub_loop]', __('Repeat for each item; inside use the shortcodes without placement', 'hub-client')],
 			['[hub_loop type="{T}" limit="3" empty="Nema novosti"] … [/hub_loop]', __('Latest items of a type; text when none', 'hub-client')],
+			['[hub_link placement="{P}" to="cta2" class="btn btn-2"]', __('Second button', 'hub-client')],
+			['[hub_loop type="{E}" upcoming="1" limit="5"] … [/hub_loop]', __('Upcoming events, soonest first; ended ones drop out by themselves', 'hub-client')],
+			['[hub type="{E}" upcoming="1" field="title"]', __('Next upcoming event (works with every shortcode)', 'hub-client')],
+			['[hub field="event_start" format="j.n.Y. H:i"]', __('Event date with your own format', 'hub-client')],
+			['[hub_link to="map" text="Upute za dolazak"]', __('Directions link (opens Google Maps)', 'hub-client')],
+			['[hub_link to="stream" text="Gledaj uživo"]', __('Live stream link', 'hub-client')],
+			['[hub_map type="{E}" upcoming="1" height="320"]', __('Embedded map with directions link (OpenStreetMap; provider="google" for Google)', 'hub-client')],
 		];
 		$fields = [
 			'title' => __('title', 'hub-client'), 'excerpt' => __('short text', 'hub-client'), 'html' => __('full content with its markup (Rich Text or Shortcode element)', 'hub-client'),
@@ -63,10 +80,21 @@ class HC_Cheatsheet {
 			'cta_url' => __('button link', 'hub-client'), 'cta_label' => __('button text', 'hub-client'), 'date' => __('publish date (format="…")', 'hub-client'),
 			'link' => __('this site\'s page for the article (if kept as an article)', 'hub-client'), 'slug' => 'slug', 'id' => __('hub ID', 'hub-client'),
 			'lang' => __('language', 'hub-client'), 'content_type' => __('content type', 'hub-client'),
+			'subtitle' => __('subtitle', 'hub-client'), 'badge' => __('badge text', 'hub-client'),
+			'cta2_url' => __('second button link', 'hub-client'), 'cta2_label' => __('second button text', 'hub-client'),
+			'image_focus' => __('focal point for object-position ("center" if not set)', 'hub-client'),
+			'event_start' => __('event start, date + time (format="…")', 'hub-client'), 'event_end' => __('event end (format="…")', 'hub-client'),
+			'event_date' => __('event start date', 'hub-client'), 'event_time' => __('event start time', 'hub-client'),
+			'location' => __('location / address', 'hub-client'), 'map_url' => __('directions link', 'hub-client'),
+			'map_lat' => __('latitude', 'hub-client'), 'map_lng' => __('longitude', 'hub-client'), 'stream_url' => __('live stream link', 'hub-client'),
+			'seo_title' => __('SEO title', 'hub-client'), 'seo_description' => __('meta description', 'hub-client'),
 		];
 		$recipes = [
 			__('Hero (Shortcode element)', 'hub-client') => "<section class=\"hero\">\n  [hub_image placement=\"{P}\" size=\"full\" class=\"hero-img\" loading=\"eager\"]\n  <h1>[hub placement=\"{P}\" field=\"title\"]</h1>\n  [hub placement=\"{P}\" field=\"html\"]\n  [hub_link placement=\"{P}\" class=\"btn\"]\n</section>",
 			__('Cards from a placement', 'hub-client') => "[hub_loop placement=\"{P}\" wrap=\"div\" class=\"cards\"]\n  <article class=\"card\">\n    [hub_image size=\"medium_large\" class=\"card-img\"]\n    <h3>[hub field=\"title\"]</h3>\n    <p>[hub field=\"excerpt\"]</p>\n    [hub_link class=\"btn\"]\n  </article>\n[/hub_loop]",
+			__('Hero with subtitle, badge and two buttons', 'hub-client') => "<section class=\"hero\">\n  [hub_image placement=\"{P}\" size=\"full\" class=\"hero-img\" loading=\"eager\"]\n  <span class=\"badge\">[hub placement=\"{P}\" field=\"badge\"]</span>\n  <h1>[hub placement=\"{P}\" field=\"title\"]</h1>\n  <p class=\"subtitle\">[hub placement=\"{P}\" field=\"subtitle\"]</p>\n  [hub_link placement=\"{P}\" class=\"btn\"]\n  [hub_link placement=\"{P}\" to=\"cta2\" class=\"btn btn-2\"]\n</section>",
+			__('Upcoming events', 'hub-client') => "[hub_loop type=\"{E}\" upcoming=\"1\" limit=\"5\" wrap=\"ul\" class=\"events\" empty=\"Trenutno nema najavljenih događaja\"]\n  <li>\n    <time>[hub field=\"event_start\" format=\"j.n.Y. H:i\"]</time>\n    <strong>[hub_link to=\"article\" text=\"title\"]</strong>\n    <span>[hub field=\"location\"]</span>\n    [hub_link to=\"map\" text=\"Upute\"]\n    [hub_link to=\"stream\" text=\"Uživo\"]\n  </li>\n[/hub_loop]",
+			__('Next event with map', 'hub-client') => "<div class=\"next-event\">\n  <h3>[hub type=\"{E}\" upcoming=\"1\" field=\"title\" default=\"Nema najavljenih događaja\"]</h3>\n  <p>[hub type=\"{E}\" upcoming=\"1\" field=\"event_date\"] · [hub type=\"{E}\" upcoming=\"1\" field=\"location\"]</p>\n  [hub_map type=\"{E}\" upcoming=\"1\" height=\"280\"]\n</div>",
 			__('Latest articles with links', 'hub-client') => "[hub_loop type=\"{T}\" limit=\"3\" wrap=\"ul\" class=\"news\"]\n  <li>\n    [hub_image size=\"medium\"]\n    [hub_link to=\"article\" text=\"title\"]\n    <time>[hub field=\"date\"]</time>\n  </li>\n[/hub_loop]",
 		];
 		$store = HC_Blocks::live_registry();
@@ -82,6 +110,8 @@ class HC_Cheatsheet {
 					<select data-token="P"><?php foreach ($place as $slug => $name) printf('<option value="%s">%s</option>', esc_attr($slug), esc_html($name === $slug ? $slug : "$name ($slug)")); ?></select></label>
 				<label><?php esc_html_e('Content type', 'hub-client'); ?>
 					<select data-token="T"><?php foreach ($types as $slug => $name) printf('<option value="%s"%s>%s</option>', esc_attr($slug), selected($slug, $T, false), esc_html($name === $slug ? $slug : "$name ($slug)")); ?></select></label>
+				<label><?php esc_html_e('Event type', 'hub-client'); ?>
+					<select data-token="E"><?php foreach (($types ?: [$E => $E]) as $slug => $name) printf('<option value="%s"%s>%s</option>', esc_attr($slug), selected($slug, $E, false), esc_html($name === $slug ? $slug : "$name ($slug)")); ?></select></label>
 				<label><?php esc_html_e('Language', 'hub-client'); ?>
 					<select data-token="L"><?php foreach ($langs as $l) printf('<option value="%s"%s>%s</option>', esc_attr($l), selected($l, $L, false), esc_html($l)); ?></select></label>
 				<span class="description"><?php esc_html_e('Pick values and every example below updates. Click a code to copy it.', 'hub-client'); ?></span>

@@ -38,6 +38,18 @@ class HC_CLI {
 	}
 
 	/**
+	 * Delete revisions beyond the limits set under Settings → Hub client → Revisions.
+	 *
+	 * [--dry-run]
+	 * : Only count what would be removed.
+	 */
+	public function revisions($args, $assoc) {
+		$dry = !empty($assoc['dry-run']);
+		$r   = HC_Revisions::prune(0, $dry);
+		WP_CLI::success(sprintf('%s %d revisions from %d posts.', $dry ? 'Would remove' : 'Removed', $r['deleted'], $r['posts']));
+	}
+
+	/**
 	 * Publish/unpublish copies whose visibility window has passed.
 	 */
 	public function windows() {

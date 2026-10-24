@@ -53,7 +53,23 @@ The tag format:
 | `[hub_loop placement="home-blocks" limit="6" wrap="div" class="grid"] … [/hub_loop]` | repeats its content for each item; inside, use the shortcodes without a placement |
 | `[hub_loop type="news" limit="3" empty="Nema novosti"] … [/hub_loop]` | latest news; `empty` = text when there are none |
 
-**Fields:** `title`, `excerpt`, `html` (the content, with its markup), `image` (URL), `image_full`, `image_alt`, `cta_url`, `cta_label`, `date` (add `format="j.n.Y."`), `slug`, `id`, `lang`, `content_type`, and `link` — the URL of this site's copy of the article (empty if it isn't kept as an article).
+**Fields:** `title`, `subtitle`, `badge`, `excerpt`, `html` (the content, with its markup), `image` (URL), `image_full`, `image_alt`, `image_focus`, `cta_url`, `cta_label`, `cta2_url`, `cta2_label`, `date` (add `format="j.n.Y."`), `slug`, `id`, `lang`, `content_type`, and `link` — the URL of this site's copy of the article (empty if it isn't kept as an article).
+
+**Event fields:** `event_start`, `event_end` (date + time; `format="…"` works), `event_date`, `event_time`, `location`, `map_url` (directions link), `map_lat`, `map_lng`, `stream_url`. Also `seo_title`, `seo_description`.
+
+### Events, maps, second button
+
+| Shortcode | Output |
+|---|---|
+| `[hub_loop type="event" upcoming="1" limit="5"] … [/hub_loop]` | upcoming events, soonest first |
+| `[hub type="event" upcoming="1" field="title"]` | the next event — `upcoming="1"` works on every shortcode |
+| `[hub_link to="cta2" class="btn-2"]` | second button |
+| `[hub_link to="map" text="Upute"]`, `[hub_link to="stream" text="Uživo"]` | directions / live stream (open in a new tab) |
+| `[hub_map type="event" upcoming="1" height="320"]` | embedded map with the pin and a directions link; OpenStreetMap (no cookies), `provider="google"` for Google, `link=""` hides the link |
+
+Bricks: `{hub:next.event:title}`, `{hub:next.event:event_date}`, `{hub:next.event:location}`, … — `next.<type>` is the upcoming items of that type, soonest first. For the **Map** element use `{hub:next.event:map_lat}` and `{hub:next.event:map_lng}`. For focal points put `{hub:home-hero:image_focus}` into the Image element's object-position (`[hub_image]` adds it by itself).
+
+Events that have ended drop out of `upcoming` lists by themselves, without a call to the hub: the stored list is filtered on every page view, and a local timer purges the page cache when the next one ends.
 
 **Don't put a shortcode inside an HTML attribute with double quotes** — `href="[hub field="cta_url"]"` breaks the attribute and WordPress leaves it unprocessed. Use `[hub_link]` (or `[hub_image]`) instead, which outputs the whole tag. If you must, use single quotes inside: `href="[hub field='cta_url']"`.
 
@@ -134,7 +150,8 @@ An optional **nightly check** (Settings → Hub client → *Calls to the hub*) p
 | Title, content (rendered HTML), excerpt, slug, publish date | as on the hub |
 | Featured image | downloaded once into this site's media library, with alt text |
 | Category (or *Article type* with the own post type) | the hub content type, e.g. `news` |
-| Custom fields `hub_cta_url`, `hub_cta_label`, `hub_canonical_site` | for Bricks dynamic data: `{cf_hub_cta_url}`, `{cf_hub_cta_label}` |
+| Custom fields `hub_cta_url`, `hub_cta_label`, `hub_canonical_site`, `hub_subtitle`, `hub_badge`, `hub_cta2_url`, `hub_cta2_label`, `hub_image_focus`, `hub_event_start`, `hub_event_end`, `hub_location`, `hub_map_lat`, `hub_map_lng`, `hub_map_url`, `hub_stream_url` | for Bricks dynamic data: `{cf_hub_subtitle}`, `{cf_hub_event_start}` … Event dates are in this site's time as `Y-m-d H:i:s`, so a Bricks query loop can sort by `hub_event_start` |
+| SEO title, meta description, social image | written to Yoast / Rank Math / SEOPress fields on each sync; AIOSEO via its filters; without an SEO plugin Hub Client prints `<title>`, meta description and Open Graph tags itself. The social image is copied into this site's media library |
 | Hidden `_hub_*` fields | link back to the hub item (id, language, group, modified, window) |
 
 **Store as**
@@ -153,6 +170,15 @@ If the hub sets an article's **Canonical site** to another site:
 
 Articles whose canonical site is this site, or that have none, are untouched.
 
+## Revisions
+
+Settings → Hub client → **Revisions**:
+
+- **Hub article copies keep** — default **0**. Their history lives on the hub, and every hub edit rewrites the copy, so revisions here would only fill the database. `-1` = unlimited.
+- **All other posts and pages keep** — empty = WordPress default (`WP_POST_REVISIONS`, usually unlimited). A value like `10` keeps the database small and still lets you go back. This setting wins over `WP_POST_REVISIONS` in `wp-config.php`.
+
+Lowering a limit also removes existing extra revisions (oldest first) in the background a minute after saving; or click **Clean up revisions now**, or run `wp hub-client revisions [--dry-run]`. Autosaves are never deleted (they count toward the limit, as in WordPress).
+
 ## Security
 
 - Webhooks must carry a valid `X-Hub-Signature` (HMAC-SHA256 over timestamp + body with the shared secret), a timestamp within 5 minutes, and this site's slug. Each signature is accepted once.
@@ -168,6 +194,7 @@ wp hub-client test              # check connection and that this site exists on 
 wp hub-client sync [--full]     # pull article changes (or re-check everything) and trash removed items
 wp hub-client refresh           # re-fetch every page section in use
 wp hub-client windows           # apply show-from / show-until now
+wp hub-client revisions [--dry-run]  # remove revisions beyond the limits
 ```
 
 ## Notes

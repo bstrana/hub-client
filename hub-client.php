@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Hub Client
  * Description:       Hub content on this site: [hub] shortcodes and {hub:…} Bricks tags for page sections, plus local copies of hub articles with their own URLs, templates, SEO and sitemaps. Updated instantly by signed webhooks.
- * Version:           0.4.2
+ * Version:           0.5.0
  * Requires at least: 6.3
  * Requires PHP:      8.0
  * Author:            Tom
@@ -14,11 +14,12 @@
 
 defined('ABSPATH') || exit;
 
-define('HUB_CLIENT_VERSION', '0.4.2');
+define('HUB_CLIENT_VERSION', '0.5.0');
 define('HUB_CLIENT_DIR', plugin_dir_path(__FILE__));
 
 require_once HUB_CLIENT_DIR . 'includes/class-hc-api.php';
 require_once HUB_CLIENT_DIR . 'includes/class-hc-meta.php';
+require_once HUB_CLIENT_DIR . 'includes/class-hc-revisions.php';
 require_once HUB_CLIENT_DIR . 'includes/class-hc-media.php';
 require_once HUB_CLIENT_DIR . 'includes/class-hc-sync.php';
 require_once HUB_CLIENT_DIR . 'includes/class-hc-webhook.php';
@@ -31,6 +32,7 @@ HC_Webhook::init();
 HC_Admin::init();
 HC_Blocks::init();
 HC_Cheatsheet::init();
+HC_Revisions::init();
 
 if (defined('WP_CLI') && WP_CLI) {
 	require_once HUB_CLIENT_DIR . 'includes/class-hc-cli.php';
@@ -70,6 +72,8 @@ function hub_client_opt(string $key) {
 		'nightly'      => 0,       // nightly article check (a timed call); off = hub calls only on webhooks
 		'purge_cache'  => 1,       // purge the page cache plugin after a hub change
 		'copy_images'  => 1,       // copy section images into this site's media library (on refresh, never on page views)
+		'rev_copies'   => 0,       // revisions kept for hub article copies (history lives on the hub); -1 = unlimited
+		'rev_other'    => '',      // revisions for all other posts/pages; '' = WordPress default
 	];
 	$o = get_option('hub_client', []);
 	return $o[$key] ?? $defaults[$key] ?? null;

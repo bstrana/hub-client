@@ -20,7 +20,14 @@ defined('ABSPATH') || exit;
  */
 class HC_Blocks {
 
-	const FIELDS = ['title', 'excerpt', 'html', 'slug', 'id', 'lang', 'cta_url', 'cta_label', 'image', 'image_url', 'image_full', 'image_alt', 'date', 'link', 'content_type'];
+	const FIELDS = [
+		'title', 'subtitle', 'badge', 'excerpt', 'html', 'slug', 'id', 'lang', 'content_type',
+		'cta_url', 'cta_label', 'cta2_url', 'cta2_label',
+		'image', 'image_url', 'image_full', 'image_alt', 'image_focus',
+		'date', 'link',
+		'event_start', 'event_end', 'event_date', 'event_time', 'location', 'map_lat', 'map_lng', 'map_url', 'stream_url',
+		'seo_title', 'seo_description',
+	];
 
 	private static array $memo  = [];
 	private static array $stack = []; // current [hub_loop] items
@@ -30,6 +37,8 @@ class HC_Blocks {
 		add_shortcode('hub_image', [__CLASS__, 'sc_image']);
 		add_shortcode('hub_loop', [__CLASS__, 'sc_loop']);
 		add_shortcode('hub_link', [__CLASS__, 'sc_link']);
+		add_shortcode('hub_map', [__CLASS__, 'sc_map']);
+		add_action(self::EVENT_HOOK, [__CLASS__, 'on_event_ended']);
 
 		// Bricks dynamic data. Harmless when Bricks isn't installed.
 		add_filter('bricks/dynamic_tags_list', [__CLASS__, 'bricks_list']);
@@ -76,10 +85,12 @@ class HC_Blocks {
 			'type'      => sanitize_title((string) ($q['type'] ?? '')),
 			'lang'      => self::current_lang((string) ($q['lang'] ?? '')),
 			'per_page'  => max(1, min(100, (int) ($q['limit'] ?? 10))),
-			'orderby'   => in_array($q['orderby'] ?? '', ['order', 'date', 'modified', 'title'], true) ? $q['orderby'] : '',
+			'orderby'   => in_array($q['orderby'] ?? '', ['order', 'date', 'modified', 'title', 'event'], true) ? $q['orderby'] : '',
+			'upcoming'  => !empty($q['upcoming']) ? 'true' : '',
 			'fallback'  => isset($q['fallback']) && !$q['fallback'] ? 'false' : '',
 		], fn($v) => $v !== '' && $v !== null);
 		if (empty($query['placement']) && empty($query['type'])) return null;
+		if (!empty($query['upcoming']) && empty($query['orderby'])) $query['orderby'] = 'event';
 		if (!empty($query['type']) && empty($query['placement']) && empty($query['orderby'])) $query['orderby'] = 'date';
 		ksort($query);
 		return $query;
@@ -122,6 +133,10 @@ class HC_Blocks {
 			self::$last['error'] = 'last refresh failed (' . $stored['error'] . '); showing the previous content';
 		}
 		$data = (array) ($stored['data'] ?? []);
+		if (!empty($query['upcoming'])) {
+			// The stored list is from the last hub change; drop events that have ended since.
+			$data = array_values(array_filter($data, fn($it) => !self::event_ended($it)));
+		}
 		self::$info[$id] = self::$last;
 		return self::$memo[$id] = $data;
 	}
@@ -160,7 +175,49 @@ class HC_Blocks {
 		$store[$id] = $entry;
 		self::save($store);
 		unset(self::$memo[$id]);
+		if (!empty($query['upcoming'])) self::schedule_event_purge();
 		return true;
+	}
+
+	/* ---------------- Upcoming events: drop ended ones without asking the hub ---------------- */
+
+	const EVENT_HOOK = 'hub_client_event_ended';
+
+	/** When an event stops being "upcoming": its end, or the end of its start day. */
+	public static function event_end_ts(array $item): int {
+		$end = strtotime((string) ($item['event_end'] ?? ''));
+		if ($end) return $end;
+		$start = strtotime((string) ($item['event_start'] ?? ''));
+		if (!$start) return 0;
+		return (int) (new DateTimeImmutable('@' . $start))->setTimezone(wp_timezone())->setTime(23, 59, 59)->getTimestamp();
+	}
+
+	public static function event_ended(array $item): bool {
+		$t = self::event_end_ts($item);
+		return $t > 0 && $t < time();
+	}
+
+	/**
+	 * One local timer at the next moment an event in an "upcoming" section ends, so the
+	 * page cache is purged then and visitors stop seeing it. No call to the hub.
+	 */
+	public static function schedule_event_purge(): void {
+		$next = 0;
+		foreach (self::store() as $e) {
+			if (empty($e['q']['upcoming'])) continue;
+			foreach ((array) ($e['data'] ?? []) as $it) {
+				$t = self::event_end_ts((array) $it);
+				if ($t > time() && (!$next || $t < $next)) $next = $t;
+			}
+		}
+		$scheduled = wp_next_scheduled(self::EVENT_HOOK);
+		if ($scheduled && (!$next || $scheduled !== $next + 60)) wp_unschedule_event($scheduled, self::EVENT_HOOK);
+		if ($next && wp_next_scheduled(self::EVENT_HOOK) !== $next + 60) wp_schedule_single_event($next + 60, self::EVENT_HOOK);
+	}
+
+	public static function on_event_ended(): void {
+		if (hub_client_opt('purge_cache')) HC_Sync::purge_page_cache();
+		self::schedule_event_purge();
 	}
 
 	/**
@@ -239,12 +296,41 @@ class HC_Blocks {
 	public static function value(array $item, string $field, array $a = []): string {
 		switch ($field) {
 			case 'title':
+			case 'subtitle':
+			case 'badge':
 			case 'excerpt':
 			case 'cta_label':
+			case 'cta2_label':
+			case 'location':
+			case 'seo_title':
+			case 'seo_description':
 			case 'slug':
 			case 'lang':
 			case 'content_type':
 				return esc_html((string) ($item[$field] ?? ''));
+			case 'cta2_url':
+			case 'stream_url':
+			case 'map_url':
+				return esc_url((string) ($item[$field] ?? ''));
+			case 'map_lat':
+			case 'map_lng':
+				return isset($item[$field]) && is_numeric($item[$field]) ? (string) (float) $item[$field] : '';
+			case 'image_focus':
+				// CSS object-position; "center" when not set, so it can go straight into a style.
+				return esc_attr((string) ($item['image_focus'] ?? '') ?: 'center');
+			case 'event_start':
+			case 'event_end':
+			case 'event_date':
+			case 'event_time':
+				$src = $field === 'event_end' ? 'event_end' : 'event_start';
+				$ts  = strtotime((string) ($item[$src] ?? ''));
+				if (!$ts) return '';
+				$fmt = (string) ($a['format'] ?? '');
+				if ($fmt === '') {
+					$fmt = $field === 'event_date' ? get_option('date_format')
+						: ($field === 'event_time' ? get_option('time_format') : get_option('date_format') . ' ' . get_option('time_format'));
+				}
+				return esc_html(wp_date($fmt, $ts));
 			case 'id':
 				return (string) (int) ($item['id'] ?? 0);
 			case 'html':
@@ -285,12 +371,13 @@ class HC_Blocks {
 			return end(self::$stack);
 		}
 		// Same limit for every index so all fields of one placement share one cached request.
-		$items = self::items(['placement' => $a['placement'], 'type' => $a['type'], 'lang' => $a['lang'], 'limit' => max(10, (int) $a['index'])]);
+		$items = self::items(['placement' => $a['placement'], 'type' => $a['type'], 'lang' => $a['lang'], 'limit' => max(10, (int) $a['index']),
+			'upcoming' => in_array((string) ($a['upcoming'] ?? ''), ['1', 'true', 'yes'], true)]);
 		return $items[max(1, (int) $a['index']) - 1] ?? null;
 	}
 
 	public static function sc_field($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'field' => 'title', 'index' => 1, 'lang' => '', 'format' => '', 'default' => ''], $atts, 'hub');
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'field' => 'title', 'index' => 1, 'lang' => '', 'upcoming' => '', 'format' => '', 'default' => ''], $atts, 'hub');
 		$item = self::pick($a);
 		$out  = $item ? self::value($item, sanitize_key($a['field']), array_filter(['format' => $a['format']])) : '';
 		if ($out !== '') return $out;
@@ -300,12 +387,15 @@ class HC_Blocks {
 	}
 
 	public static function sc_image($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'index' => 1, 'lang' => '', 'size' => 'large', 'class' => '', 'loading' => 'lazy', 'sizes' => '100vw'], $atts, 'hub_image');
-		$item = self::pick($a);
-		$img  = $item['image'] ?? null;
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'size' => 'large', 'class' => '', 'loading' => 'lazy', 'sizes' => '100vw'], $atts, 'hub_image');
+		$item  = self::pick($a);
+		$img   = $item['image'] ?? null;
 		if (!$img) return $item ? '' : self::hint('[hub_image]');
+		$focus = (string) ($item['image_focus'] ?? '');
+		$focus = preg_match('/^[a-z0-9% .]+$/', $focus) ? $focus : '';
 		if ($lid = self::local_image($item)) {
 			$attr = ['class' => $a['class'], 'loading' => $a['loading'] === 'eager' ? 'eager' : 'lazy', 'decoding' => 'async', 'alt' => (string) ($img['alt'] ?? '')];
+			if ($focus !== '') $attr['style'] = 'object-position:' . $focus;
 			if ($a['loading'] === 'eager') $attr['fetchpriority'] = 'high';
 			if ($a['sizes'] !== '100vw') $attr['sizes'] = $a['sizes'];
 			return wp_get_attachment_image($lid, sanitize_key($a['size']) ?: 'large', false, $attr);
@@ -314,45 +404,93 @@ class HC_Blocks {
 		$src  = $size === 'full' ? ($img['full'] ?? '') : ($img['sizes'][$size] ?? $img['url'] ?? '');
 		if (!$src) return '';
 		return sprintf(
-			'<img src="%s"%s alt="%s"%s class="%s" loading="%s" decoding="async">',
+			'<img src="%s"%s alt="%s"%s class="%s" loading="%s" decoding="async"%s>',
 			esc_url($src),
 			!empty($img['srcset']) ? ' srcset="' . esc_attr($img['srcset']) . '" sizes="' . esc_attr($a['sizes']) . '"' : '',
 			esc_attr($img['alt'] ?? ''),
 			!empty($img['width']) && $size === 'full' ? ' width="' . (int) $img['width'] . '" height="' . (int) $img['height'] . '"' : '',
 			esc_attr($a['class']),
-			$a['loading'] === 'eager' ? 'eager' : 'lazy'
+			$a['loading'] === 'eager' ? 'eager' : 'lazy',
+			$focus !== '' ? ' style="object-position:' . esc_attr($focus) . '"' : ''
 		);
 	}
 
 	/**
 	 * A complete link, so no shortcode has to sit inside an href="…" attribute.
 	 *   [hub_link placement="home-hero" class="btn"]                → button: cta_url + cta_label
+	 *   [hub_link placement="home-hero" to="cta2" class="btn-2"]     → second button
 	 *   [hub_link to="article" text="Pročitaj više"]                 → this site's copy of the article
+	 *   [hub_link type="event" to="stream" text="Gledaj uživo"]      → live stream
+	 *   [hub_link type="event" to="map" text="Upute"]                → directions (Google Maps)
 	 *   [hub_link to="cta" text="title"]                             → link text from another field
 	 * Always self-closing (no [/hub_link]), so it can't swallow the content after it.
 	 */
 	public static function sc_link($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'index' => 1, 'lang' => '', 'to' => 'cta', 'text' => '', 'class' => '', 'target' => ''], $atts, 'hub_link');
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'to' => 'cta', 'text' => '', 'class' => '', 'target' => ''], $atts, 'hub_link');
 		$item = self::pick($a);
 		if (!$item) return self::hint('[hub_link]');
-		$href = self::value($item, $a['to'] === 'article' ? 'link' : 'cta_url');
+		// to => [link field, default text field, fallback text]
+		$targets = [
+			'cta'     => ['cta_url', 'cta_label', ''],
+			'cta2'    => ['cta2_url', 'cta2_label', ''],
+			'article' => ['link', 'title', ''],
+			'stream'  => ['stream_url', '', __('Watch live', 'hub-client')],
+			'map'     => ['map_url', 'location', __('Directions', 'hub-client')],
+		];
+		[$href_field, $text_field, $fallback] = $targets[$a['to']] ?? $targets['cta'];
+		$href = self::value($item, $href_field);
 		if ($href === '') return '';
 		if ($a['text'] !== '' && in_array($a['text'], self::FIELDS, true)) {
 			$label = self::value($item, $a['text']);
 		} elseif ($a['text'] !== '') {
 			$label = esc_html($a['text']);
 		} else {
-			$label = self::value($item, $a['to'] === 'article' ? 'title' : 'cta_label') ?: esc_html($href);
+			$label = ($text_field !== '' ? self::value($item, $text_field) : '') ?: esc_html($fallback !== '' ? $fallback : $href);
 		}
+		$blank = $a['target'] === '_blank' || ($a['target'] === '' && in_array($a['to'], ['stream', 'map'], true));
 		return sprintf('<a href="%s"%s%s>%s</a>', $href, $a['class'] !== '' ? ' class="' . esc_attr($a['class']) . '"' : '',
-			$a['target'] === '_blank' ? ' target="_blank" rel="noopener"' : '', $label);
+			$blank ? ' target="_blank" rel="noopener"' : '', $label);
+	}
+
+	/**
+	 * A map of the item's pin, embedded (lazy-loaded), with a directions link.
+	 *   [hub_map type="event"]   [hub_map placement="contact" height="400" provider="google"]
+	 * provider="osm" (default, OpenStreetMap: no cookies) or "google". link="" hides the link.
+	 */
+	public static function sc_map($atts): string {
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'height' => 320, 'provider' => 'osm', 'class' => 'hub-map', 'link' => __('Directions', 'hub-client')], $atts, 'hub_map');
+		$item = self::pick($a);
+		if (!$item) return self::hint('[hub_map]');
+		$lat = isset($item['map_lat']) && is_numeric($item['map_lat']) ? (float) $item['map_lat'] : null;
+		$lng = isset($item['map_lng']) && is_numeric($item['map_lng']) ? (float) $item['map_lng'] : null;
+		$loc = (string) ($item['location'] ?? '');
+		$h   = max(120, min(1200, (int) $a['height']));
+		$src = '';
+		if ($a['provider'] === 'google') {
+			$q   = $lat !== null && $lng !== null ? "$lat,$lng" : $loc;
+			$src = $q !== '' ? 'https://maps.google.com/maps?q=' . rawurlencode($q) . '&z=15&output=embed' : '';
+		} elseif ($lat !== null && $lng !== null) {
+			$d   = 0.006;
+			$src = sprintf('https://www.openstreetmap.org/export/embed.html?bbox=%F%%2C%F%%2C%F%%2C%F&layer=mapnik&marker=%F%%2C%F', $lng - $d, $lat - $d / 1.6, $lng + $d, $lat + $d / 1.6, $lat, $lng);
+		}
+		$out = '';
+		if ($src !== '') {
+			$out .= sprintf('<iframe src="%s" title="%s" loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="border:0;width:100%%;height:%dpx" allowfullscreen></iframe>',
+				esc_url($src), esc_attr($loc !== '' ? $loc : __('Map', 'hub-client')), $h);
+		}
+		$url = self::value($item, 'map_url');
+		if ($a['link'] !== '' && $url !== '') {
+			$out .= sprintf('<a class="hub-map-link" href="%s" target="_blank" rel="noopener">%s</a>', $url, esc_html($a['link']));
+		}
+		if ($out === '') return '';
+		return '<div class="' . esc_attr($a['class']) . '">' . $out . '</div>';
 	}
 
 	public static function sc_loop($atts, $content = ''): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'lang' => '', 'limit' => 10, 'orderby' => '', 'fallback' => 'true', 'wrap' => '', 'class' => '', 'empty' => ''], $atts, 'hub_loop');
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'lang' => '', 'limit' => 10, 'orderby' => '', 'upcoming' => '', 'fallback' => 'true', 'wrap' => '', 'class' => '', 'empty' => ''], $atts, 'hub_loop');
 		$items = self::items([
 			'placement' => $a['placement'], 'type' => $a['type'], 'lang' => $a['lang'], 'limit' => (int) $a['limit'],
-			'orderby' => $a['orderby'], 'fallback' => $a['fallback'] !== 'false',
+			'orderby' => $a['orderby'], 'upcoming' => in_array($a['upcoming'], ['1', 'true', 'yes'], true), 'fallback' => $a['fallback'] !== 'false',
 		]);
 		if (!$items) return $a['empty'] !== '' ? esc_html($a['empty']) : self::hint('[hub_loop]');
 		$out = '';
@@ -380,20 +518,42 @@ class HC_Blocks {
 		$types = HC_Meta::types($meta);
 
 		$placement_fields = [
-			'title'     => __('Title', 'hub-client'),
-			'excerpt'   => __('Excerpt', 'hub-client'),
-			'html'      => __('Content (HTML)', 'hub-client'),
-			'image'     => __('Image', 'hub-client'),
-			'image_alt' => __('Image alt text', 'hub-client'),
-			'cta_label' => __('Button text', 'hub-client'),
-			'cta_url'   => __('Button link', 'hub-client'),
+			'title'       => __('Title', 'hub-client'),
+			'subtitle'    => __('Subtitle', 'hub-client'),
+			'badge'       => __('Badge', 'hub-client'),
+			'excerpt'     => __('Excerpt', 'hub-client'),
+			'html'        => __('Content (HTML)', 'hub-client'),
+			'image'       => __('Image', 'hub-client'),
+			'image_alt'   => __('Image alt text', 'hub-client'),
+			'image_focus' => __('Image focal point (CSS object-position)', 'hub-client'),
+			'cta_label'   => __('Button text', 'hub-client'),
+			'cta_url'     => __('Button link', 'hub-client'),
+			'cta2_label'  => __('Second button text', 'hub-client'),
+			'cta2_url'    => __('Second button link', 'hub-client'),
 		];
 		$type_fields = [
-			'title'   => __('Title (newest)', 'hub-client'),
-			'excerpt' => __('Excerpt (newest)', 'hub-client'),
-			'image'   => __('Image (newest)', 'hub-client'),
-			'link'    => __('Article page link (newest)', 'hub-client'),
-			'date'    => __('Date (newest)', 'hub-client'),
+			'title'    => __('Title (newest)', 'hub-client'),
+			'subtitle' => __('Subtitle (newest)', 'hub-client'),
+			'badge'    => __('Badge (newest)', 'hub-client'),
+			'excerpt'  => __('Excerpt (newest)', 'hub-client'),
+			'image'    => __('Image (newest)', 'hub-client'),
+			'link'     => __('Article page link (newest)', 'hub-client'),
+			'date'     => __('Date (newest)', 'hub-client'),
+		];
+		$event_fields = [
+			'title'      => __('Title', 'hub-client'),
+			'event_date' => __('Date', 'hub-client'),
+			'event_time' => __('Time', 'hub-client'),
+			'event_start' => __('Starts (date + time)', 'hub-client'),
+			'event_end'  => __('Ends (date + time)', 'hub-client'),
+			'location'   => __('Location', 'hub-client'),
+			'map_url'    => __('Directions link', 'hub-client'),
+			'map_lat'    => __('Latitude (Map element)', 'hub-client'),
+			'map_lng'    => __('Longitude (Map element)', 'hub-client'),
+			'stream_url' => __('Live stream link', 'hub-client'),
+			'image'      => __('Image', 'hub-client'),
+			'link'       => __('Article page link', 'hub-client'),
+			'cta_url'    => __('Button link', 'hub-client'),
 		];
 
 		if (!$place && !$types) {
@@ -412,11 +572,28 @@ class HC_Blocks {
 				$tags[] = ['name' => '{hub:type.' . $slug . ':' . $field . '}', 'label' => $label, 'group' => $group];
 			}
 		}
+		// Event-like types also get a "next" group: upcoming items, soonest first.
+		foreach (self::event_types(array_keys($types)) as $slug) {
+			$group = sprintf('Hub · %s (%s)', $types[$slug] ?? $slug, __('next upcoming', 'hub-client'));
+			foreach ($event_fields as $field => $label) {
+				$tags[] = ['name' => '{hub:next.' . $slug . ':' . $field . '}', 'label' => $label, 'group' => $group];
+			}
+		}
 		// How-to entries for the index / language suffixes.
 		$first = (string) (array_key_first($place) ?: 'home-blocks');
 		$tags[] = ['name' => '{hub:' . $first . ':title:2}', 'label' => __('2nd item — add :2, :3 … to any tag', 'hub-client'), 'group' => 'Hub · tips'];
 		$tags[] = ['name' => '{hub:' . $first . ':title:1:en}', 'label' => __('Fixed language — add :1:en to any tag', 'hub-client'), 'group' => 'Hub · tips'];
+		$tags[] = ['name' => '{hub:next.' . ((string) (array_key_first($types) ?: 'event')) . ':title}', 'label' => __('Next upcoming item of any type — next.<type>', 'hub-client'), 'group' => 'Hub · tips'];
 		return $tags;
+	}
+
+	/**
+	 * Content types that are events, for the "next upcoming" picker groups.
+	 * Guessed from the slug; adjust with the hub_client_event_types filter.
+	 */
+	public static function event_types(array $slugs): array {
+		$guess = array_values(array_filter($slugs, fn($s) => (bool) preg_match('/event|dogad|turnir|tournament|kamp|camp|utakmic|match|game|trening/i', $s)));
+		return (array) apply_filters('hub_client_event_types', $guess, $slugs);
 	}
 
 	/** "hub:placement:field[:index[:lang]]" → value (string, or [url] for image fields). */
@@ -426,9 +603,13 @@ class HC_Blocks {
 		[, $source, $field] = $parts;
 		$index = max(1, (int) ($parts[3] ?? 1));
 		$lang  = (string) ($parts[4] ?? '');
-		$q = str_starts_with($source, 'type.')
-			? ['type' => substr($source, 5), 'lang' => $lang, 'limit' => max(10, $index)]
-			: ['placement' => $source, 'lang' => $lang, 'limit' => max(10, $index)];
+		if (str_starts_with($source, 'next.')) {          // next.event = upcoming events, soonest first
+			$q = ['type' => substr($source, 5), 'upcoming' => true, 'lang' => $lang, 'limit' => max(10, $index)];
+		} elseif (str_starts_with($source, 'type.')) {
+			$q = ['type' => substr($source, 5), 'lang' => $lang, 'limit' => max(10, $index)];
+		} else {
+			$q = ['placement' => $source, 'lang' => $lang, 'limit' => max(10, $index)];
+		}
 		$item = self::items($q)[$index - 1] ?? null;
 		if (!$item) return $context === 'image' ? [] : ($context === 'text' ? self::hint('{' . $tag . '}') : '');
 
@@ -450,7 +631,7 @@ class HC_Blocks {
 
 	public static function bricks_content($content, $post = null, $context = 'text') {
 		if (!is_string($content) || !str_contains($content, '{hub:')) return $content;
-		return preg_replace_callback('/\{(hub:[a-z0-9_.\-]+:[a-z_]+(?::\d+)?(?::[a-z]{2,3})?)\}/i', function ($m) {
+		return preg_replace_callback('/\{(hub:[a-z0-9_.\-]+:[a-z][a-z0-9_]*(?::\d+)?(?::[a-z]{2,3})?)\}/i', function ($m) {
 			$v = self::resolve($m[1], 'text');
 			return is_string($v) ? $v : '';
 		}, $content);
