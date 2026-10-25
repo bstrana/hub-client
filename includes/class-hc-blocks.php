@@ -24,7 +24,7 @@ class HC_Blocks {
 		'title', 'subtitle', 'badge', 'excerpt', 'html', 'slug', 'id', 'lang', 'content_type',
 		'cta_url', 'cta_label', 'cta2_url', 'cta2_label',
 		'image', 'image_url', 'image_full', 'image_alt', 'image_focus',
-		'date', 'link',
+		'date', 'link', 'tags',
 		'event_start', 'event_end', 'event_date', 'event_time', 'location', 'map_lat', 'map_lng', 'map_url', 'stream_url',
 		'seo_title', 'seo_description',
 	];
@@ -273,17 +273,27 @@ class HC_Blocks {
 			'site'      => (string) hub_client_opt('site'),
 			'placement' => sanitize_title((string) ($q['placement'] ?? '')),
 			'type'      => sanitize_title((string) ($q['type'] ?? '')),
+			'tag'       => self::tag_param((string) ($q['tag'] ?? '')),
 			'lang'      => self::current_lang((string) ($q['lang'] ?? '')),
 			'per_page'  => max(1, min(100, (int) ($q['limit'] ?? 10))),
 			'orderby'   => in_array($q['orderby'] ?? '', ['order', 'date', 'modified', 'title', 'event'], true) ? $q['orderby'] : '',
 			'upcoming'  => !empty($q['upcoming']) ? 'true' : '',
 			'fallback'  => isset($q['fallback']) && !$q['fallback'] ? 'false' : '',
 		], fn($v) => $v !== '' && $v !== null);
-		if (empty($query['placement']) && empty($query['type'])) return null;
+		if (empty($query['placement']) && empty($query['type']) && empty($query['tag'])) return null;
 		if (!empty($query['upcoming']) && empty($query['orderby'])) $query['orderby'] = 'event';
-		if (!empty($query['type']) && empty($query['placement']) && empty($query['orderby'])) $query['orderby'] = 'date';
+		if ((!empty($query['type']) || !empty($query['tag'])) && empty($query['placement']) && empty($query['orderby'])) $query['orderby'] = 'date';
 		ksort($query);
 		return $query;
+	}
+
+	/** "a, b" → "a,b" (any of them); "a+b" → "a+b" (all of them). Slugs only. */
+	public static function tag_param(string $raw): string {
+		$raw = trim($raw);
+		if ($raw === '') return '';
+		$all   = str_contains($raw, '+');
+		$slugs = array_values(array_filter(array_map('sanitize_title', preg_split('/[,+]/', $raw))));
+		return implode($all ? '+' : ',', array_slice($slugs, 0, 5));
 	}
 
 	public static function key(array $query): string {
@@ -421,7 +431,8 @@ class HC_Blocks {
 			$shows  = in_array($hub_id, (array) ($entry['ids'] ?? []), true);
 			$fits   = $item && (
 				(!empty($q['placement']) && in_array($q['placement'], (array) ($item['placements'] ?? []), true)) ||
-				(!empty($q['type']) && empty($q['placement']) && in_array($q['type'], (array) ($item['content_types'] ?? []), true))
+				(!empty($q['type']) && empty($q['placement']) && in_array($q['type'], (array) ($item['content_types'] ?? []), true)) ||
+				(!empty($q['tag']) && empty($q['placement']) && empty($q['type']) && array_intersect(preg_split('/[,+]/', $q['tag']), (array) ($item['tags'] ?? [])))
 			);
 			if ($shows || $fits) {
 				self::fetch($id, $q, $bust);
@@ -498,6 +509,8 @@ class HC_Blocks {
 			case 'lang':
 			case 'content_type':
 				return esc_html((string) ($item[$field] ?? ''));
+			case 'tags':
+				return esc_html(implode(', ', (array) ($item['tag_names'] ?? [])));
 			case 'cta2_url':
 			case 'stream_url':
 			case 'map_url':
@@ -558,17 +571,17 @@ class HC_Blocks {
 
 	private static function pick(array $a): ?array {
 		// Inside [hub_loop] without its own source: the current loop item.
-		if (self::$stack && empty($a['placement']) && empty($a['type'])) {
+		if (self::$stack && empty($a['placement']) && empty($a['type']) && empty($a['tag'])) {
 			return end(self::$stack);
 		}
 		// Same limit for every index so all fields of one placement share one cached request.
-		$items = self::items(['placement' => $a['placement'], 'type' => $a['type'], 'lang' => $a['lang'], 'limit' => max(10, (int) $a['index']),
+		$items = self::items(['placement' => $a['placement'], 'type' => $a['type'], 'tag' => (string) ($a['tag'] ?? ''), 'lang' => $a['lang'], 'limit' => max(10, (int) $a['index']),
 			'upcoming' => in_array((string) ($a['upcoming'] ?? ''), ['1', 'true', 'yes'], true)]);
 		return $items[max(1, (int) $a['index']) - 1] ?? null;
 	}
 
 	public static function sc_field($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'field' => 'title', 'index' => 1, 'lang' => '', 'upcoming' => '', 'format' => '', 'default' => ''], $atts, 'hub');
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'field' => 'title', 'index' => 1, 'lang' => '', 'upcoming' => '', 'format' => '', 'default' => ''], $atts, 'hub');
 		$item = self::pick($a);
 		$out  = $item ? self::value($item, sanitize_key($a['field']), array_filter(['format' => $a['format']])) : '';
 		if ($out !== '') return $out;
@@ -578,7 +591,7 @@ class HC_Blocks {
 	}
 
 	public static function sc_image($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'size' => 'large', 'class' => '', 'loading' => 'lazy', 'sizes' => '100vw'], $atts, 'hub_image');
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'size' => 'large', 'class' => '', 'loading' => 'lazy', 'sizes' => '100vw'], $atts, 'hub_image');
 		$item  = self::pick($a);
 		$img   = $item['image'] ?? null;
 		if (!$img) return $item ? '' : self::hint('[hub_image]');
@@ -617,7 +630,7 @@ class HC_Blocks {
 	 * Always self-closing (no [/hub_link]), so it can't swallow the content after it.
 	 */
 	public static function sc_link($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'to' => 'cta', 'text' => '', 'class' => '', 'target' => ''], $atts, 'hub_link');
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'to' => 'cta', 'text' => '', 'class' => '', 'target' => ''], $atts, 'hub_link');
 		$item = self::pick($a);
 		if (!$item) return self::hint('[hub_link]');
 		// to => [link field, default text field, fallback text]
@@ -649,7 +662,7 @@ class HC_Blocks {
 	 * provider="osm" (default, OpenStreetMap: no cookies) or "google". link="" hides the link.
 	 */
 	public static function sc_map($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'height' => 320, 'provider' => 'osm', 'class' => 'hub-map', 'link' => __('Directions', 'hub-client')], $atts, 'hub_map');
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'height' => 320, 'provider' => 'osm', 'class' => 'hub-map', 'link' => __('Directions', 'hub-client')], $atts, 'hub_map');
 		$item = self::pick($a);
 		if (!$item) return self::hint('[hub_map]');
 		$lat = isset($item['map_lat']) && is_numeric($item['map_lat']) ? (float) $item['map_lat'] : null;
@@ -678,9 +691,9 @@ class HC_Blocks {
 	}
 
 	public static function sc_loop($atts, $content = ''): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'lang' => '', 'limit' => 10, 'orderby' => '', 'upcoming' => '', 'fallback' => 'true', 'wrap' => '', 'class' => '', 'empty' => ''], $atts, 'hub_loop');
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'lang' => '', 'limit' => 10, 'orderby' => '', 'upcoming' => '', 'fallback' => 'true', 'wrap' => '', 'class' => '', 'empty' => ''], $atts, 'hub_loop');
 		$items = self::items([
-			'placement' => $a['placement'], 'type' => $a['type'], 'lang' => $a['lang'], 'limit' => (int) $a['limit'],
+			'placement' => $a['placement'], 'type' => $a['type'], 'tag' => $a['tag'], 'lang' => $a['lang'], 'limit' => (int) $a['limit'],
 			'orderby' => $a['orderby'], 'upcoming' => in_array($a['upcoming'], ['1', 'true', 'yes'], true), 'fallback' => $a['fallback'] !== 'false',
 		]);
 		if (!$items) return $a['empty'] !== '' ? esc_html($a['empty']) : self::hint('[hub_loop]');
@@ -774,6 +787,7 @@ class HC_Blocks {
 		$first = (string) (array_key_first($place) ?: 'home-blocks');
 		$tags[] = ['name' => '{hub:' . $first . ':title:2}', 'label' => __('2nd item — add :2, :3 … to any tag', 'hub-client'), 'group' => 'Hub · tips'];
 		$tags[] = ['name' => '{hub:' . $first . ':title:1:en}', 'label' => __('Fixed language — add :1:en to any tag', 'hub-client'), 'group' => 'Hub · tips'];
+		$tags[] = ['name' => '{hub:tag.' . ((string) (array_key_first(HC_Meta::tags($meta)) ?: 'my-tag')) . ':title}', 'label' => __('Newest item with a tag — tag.<slug>', 'hub-client'), 'group' => 'Hub · tips'];
 		$tags[] = ['name' => '{hub:next.' . ((string) (array_key_first($types) ?: 'event')) . ':title}', 'label' => __('Next upcoming item of any type — next.<type>', 'hub-client'), 'group' => 'Hub · tips'];
 		return $tags;
 	}
@@ -796,6 +810,8 @@ class HC_Blocks {
 		$lang  = (string) ($parts[4] ?? '');
 		if (str_starts_with($source, 'next.')) {          // next.event = upcoming events, soonest first
 			$q = ['type' => substr($source, 5), 'upcoming' => true, 'lang' => $lang, 'limit' => max(10, $index)];
+		} elseif (str_starts_with($source, 'tag.')) {             // tag.summer-camp = newest items with that tag
+			$q = ['tag' => substr($source, 4), 'lang' => $lang, 'limit' => max(10, $index)];
 		} elseif (str_starts_with($source, 'type.')) {
 			$q = ['type' => substr($source, 5), 'lang' => $lang, 'limit' => max(10, $index)];
 		} else {

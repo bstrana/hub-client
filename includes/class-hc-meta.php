@@ -62,6 +62,10 @@ class HC_Meta {
 		return array_column((array) ($m['placements'] ?? []), 'name', 'slug');
 	}
 
+	public static function tags(array $m): array {
+		return array_column((array) ($m['tags'] ?? []), 'name', 'slug');
+	}
+
 	public static function types(array $m): array {
 		return array_column((array) ($m['content_types'] ?? []), 'name', 'slug');
 	}

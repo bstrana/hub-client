@@ -143,6 +143,18 @@ class HC_Sync {
 			'show_admin_column' => true,
 			'rewrite'           => ['slug' => $slug . '-type'],
 		]);
+		register_taxonomy('hub_article_tag', ['hub_article'], [
+			'labels'            => ['name' => __('Article tags', 'hub-client'), 'singular_name' => __('Article tag', 'hub-client')],
+			'public'            => true,
+			'hierarchical'      => false,
+			'show_in_rest'      => true,
+			'show_admin_column' => true,
+			'rewrite'           => ['slug' => $slug . '-tag'],
+		]);
+	}
+
+	public static function tag_taxonomy(): string {
+		return self::post_type() === 'post' ? 'post_tag' : 'hub_article_tag';
 	}
 
 	public static function schedule(): void {
@@ -275,6 +287,18 @@ class HC_Sync {
 			if (!is_wp_error($t)) $terms[] = (int) $t['term_id'];
 		}
 		if ($terms) wp_set_object_terms($id, $terms, self::type_taxonomy(), false);
+
+		// Hub tags → post tags (or Article tags), same slug, so Bricks tag archives and queries work.
+		$tag_ids = [];
+		$names   = (array) ($item['tag_names'] ?? []);
+		foreach (array_values((array) ($item['tags'] ?? [])) as $i => $slug) {
+			$slug = sanitize_title((string) $slug);
+			if ($slug === '') continue;
+			$t = term_exists($slug, self::tag_taxonomy());
+			if (!$t) $t = wp_insert_term(sanitize_text_field((string) ($names[$i] ?? $slug)), self::tag_taxonomy(), ['slug' => $slug]);
+			if (!is_wp_error($t)) $tag_ids[] = (int) $t['term_id'];
+		}
+		wp_set_object_terms($id, $tag_ids, self::tag_taxonomy(), false);
 
 		self::sync_image($id, $item['image'] ?? null);
 		self::link_language($id, $item);
