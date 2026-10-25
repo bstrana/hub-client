@@ -56,23 +56,71 @@ class HC_Blocks {
 
 	/* ---------------- Data: a local store, refreshed only when the hub says so ---------------- */
 	//
-	// Every distinct section query (site + placement/type + language + limit + order)
-	// is kept, with its data, in ONE option (`hub_client_blocks`), so a page view costs a
-	// single database read however many sections it shows. Page views only READ the
-	// store — visitors never cause a call to the hub.
+	// Every distinct section query (site + placement/type + language + limit + order) is
+	// listed in a small index option (`hub_client_blocks`: query, last seen, last fetched,
+	// error, the hub IDs it shows). Its items live in their own option
+	// (`hub_client_block_<id>`, not autoloaded), so a page view only loads the sections it
+	// shows, and webhooks work from the index without loading any section data.
+	// Page views only READ — visitors never cause a call to the hub.
 	// The hub's webhook refreshes the queries a change can affect (refresh_for_item()).
 	// A query nobody has fetched yet is fetched once when an editor views it (can be
 	// switched off), or by "Refresh sections now" / `wp hub-client refresh`.
 
 	const STORE = 'hub_client_blocks';
+	const DATA  = 'hub_client_block_';
 
-	/** @return array<string, array{q:array,seen:int,data?:array,fetched?:int,error?:string}> */
-	private static function store(): array {
-		return (array) get_option(self::STORE, []);
+	/**
+	 * The index. $fresh re-reads it from the database (before writing), so two webhooks
+	 * at the same moment don't overwrite each other's changes.
+	 * @return array<string, array{q:array,seen:int,fetched?:int,error?:string,ids?:int[],next_end?:int,count?:int}>
+	 */
+	private static function store(bool $fresh = false): array {
+		if ($fresh) wp_cache_delete(self::STORE, 'options');
+		$store = (array) get_option(self::STORE, []);
+		// Older versions kept every section's items inside the index: move them out once.
+		$moved = false;
+		foreach ($store as $id => $e) {
+			if (is_array($e) && array_key_exists('data', $e)) {
+				self::put_data((string) $id, (array) $e['data']);
+				$store[$id] = self::summarize($e, (array) $e['data']);
+				$moved = true;
+			}
+		}
+		if ($moved) update_option(self::STORE, $store, false);
+		return $store;
 	}
 
-	private static function save(array $store): void {
+	/** Change one index entry (fresh read-modify-write; null removes it). */
+	private static function update_entry(string $id, ?callable $change): void {
+		$store = self::store(true);
+		if ($change === null) {
+			unset($store[$id]);
+		} else {
+			$store[$id] = $change($store[$id] ?? []);
+		}
 		update_option(self::STORE, $store, false);
+	}
+
+	private static function data(string $id): array {
+		return (array) get_option(self::DATA . $id, []);
+	}
+
+	private static function put_data(string $id, array $items): void {
+		update_option(self::DATA . $id, $items, false);
+	}
+
+	/** Index facts about a section's items, so nothing else needs to load them. */
+	private static function summarize(array $entry, array $items): array {
+		unset($entry['data']);
+		$entry['ids']   = array_values(array_map('intval', array_column($items, 'id')));
+		$entry['count'] = count($items);
+		$next = 0;
+		foreach ($items as $it) {
+			$t = self::event_end_ts((array) $it);
+			if ($t > time() && (!$next || $t < $next)) $next = $t;
+		}
+		$entry['next_end'] = $next;
+		return $entry;
 	}
 
 	/**
@@ -260,13 +308,12 @@ class HC_Blocks {
 			return self::$memo[$id] = [];
 		}
 
-		self::register($id, $query);
-		$stored = self::store()[$id] ?? [];
+		$stored = self::register($id, $query);
 		if (!isset($stored['fetched'])) {
 			// Never fetched. Only an editor's page view may fetch it now; visitors wait for the hub.
 			if (hub_client_opt('editor_fetch') && is_user_logged_in() && current_user_can('edit_posts')) {
 				$r = self::fetch($id, $query);
-				$stored = self::store()[$id] ?? [];
+				$stored = self::store(true)[$id] ?? [];
 				if (is_wp_error($r)) self::$last['error'] = $r->get_error_message();
 			} else {
 				self::$last['error'] = 'not loaded yet — it arrives with the next change on the hub, or use Settings → Hub client → "Refresh sections now".';
@@ -274,7 +321,7 @@ class HC_Blocks {
 		} elseif (!empty($stored['error'])) {
 			self::$last['error'] = 'last refresh failed (' . $stored['error'] . '); showing the previous content';
 		}
-		$data = (array) ($stored['data'] ?? []);
+		$data = isset($stored['fetched']) ? self::data($id) : [];
 		if (!empty($query['upcoming'])) {
 			// The stored list is from the last hub change; drop events that have ended since.
 			$data = array_values(array_filter($data, fn($it) => !self::event_ended($it)));
@@ -283,12 +330,12 @@ class HC_Blocks {
 		return self::$memo[$id] = $data;
 	}
 
-	/** Remember that a page uses this query, so webhooks keep it current. */
-	private static function register(string $id, array $query): void {
-		$store = self::store();
-		if (isset($store[$id]) && (time() - (int) ($store[$id]['seen'] ?? 0)) < DAY_IN_SECONDS) return; // write at most daily
-		$store[$id] = array_merge($store[$id] ?? [], ['q' => $query, 'seen' => time()]);
-		self::save($store);
+	/** Remember that a page uses this query, so webhooks keep it current. Returns its index entry. */
+	private static function register(string $id, array $query): array {
+		$entry = self::store()[$id] ?? null;
+		if ($entry && (time() - (int) ($entry['seen'] ?? 0)) < DAY_IN_SECONDS) return $entry; // write at most daily
+		self::update_entry($id, fn($e) => array_merge($e, ['q' => $query, 'seen' => time()]));
+		return self::store()[$id] ?? [];
 	}
 
 	/**
@@ -300,22 +347,22 @@ class HC_Blocks {
 	public static function fetch(string $id, array $query, string $bust = '') {
 		$q = $query;
 		if ($bust !== '') $q['_v'] = $bust; // unique URL: never served from Cloudflare's edge cache
-		$res   = HC_API::get('/content', $q);
-		$store = self::store();
-		$entry = $store[$id] ?? ['q' => $query, 'seen' => time()];
+		$res = HC_API::get('/content', $q);
 		if (is_wp_error($res)) {
-			$entry['error'] = $res->get_error_message(); // previous data stays
-			$store[$id] = $entry;
-			self::save($store);
-			HC_Sync::log('blocks', 0, $res->get_error_message());
+			$msg = $res->get_error_message();
+			self::update_entry($id, fn($e) => array_merge(['q' => $query, 'seen' => time()], $e, ['error' => $msg])); // previous data stays
+			HC_Sync::log('blocks', 0, $msg);
 			return $res;
 		}
-		// Images are copied here, at refresh time — never during a page view.
-		$entry['data']    = HC_Media::localize_items(is_array($res['data']) ? $res['data'] : []);
-		$entry['fetched'] = time();
-		$entry['error']   = '';
-		$store[$id] = $entry;
-		self::save($store);
+		// Images are copied and HTML is cleaned here, at refresh time — never during a page view.
+		$items = HC_Media::localize_items(is_array($res['data']) ? array_values(array_filter($res['data'], 'is_array')) : []);
+		foreach ($items as &$it) {
+			if (isset($it['html'])) $it['html'] = wp_kses_post((string) $it['html']);
+			$it['_safe'] = 1;
+		}
+		unset($it);
+		self::put_data($id, $items);
+		self::update_entry($id, fn($e) => self::summarize(array_merge(['q' => $query, 'seen' => time()], $e, ['fetched' => time(), 'error' => '']), $items));
 		unset(self::$memo[$id]);
 		if (!empty($query['upcoming'])) self::schedule_event_purge();
 		return true;
@@ -347,10 +394,8 @@ class HC_Blocks {
 		$next = 0;
 		foreach (self::store() as $e) {
 			if (empty($e['q']['upcoming'])) continue;
-			foreach ((array) ($e['data'] ?? []) as $it) {
-				$t = self::event_end_ts((array) $it);
-				if ($t > time() && (!$next || $t < $next)) $next = $t;
-			}
+			$t = (int) ($e['next_end'] ?? 0);
+			if ($t > time() && (!$next || $t < $next)) $next = $t;
 		}
 		$scheduled = wp_next_scheduled(self::EVENT_HOOK);
 		if ($scheduled && (!$next || $scheduled !== $next + 60)) wp_unschedule_event($scheduled, self::EVENT_HOOK);
@@ -373,7 +418,7 @@ class HC_Blocks {
 		$calls = 0;
 		foreach (self::live_registry() as $id => $entry) {
 			$q      = $entry['q'];
-			$shows  = in_array($hub_id, array_map('intval', array_column((array) ($entry['data'] ?? []), 'id')), true);
+			$shows  = in_array($hub_id, (array) ($entry['ids'] ?? []), true);
 			$fits   = $item && (
 				(!empty($q['placement']) && in_array($q['placement'], (array) ($item['placements'] ?? []), true)) ||
 				(!empty($q['type']) && empty($q['placement']) && in_array($q['type'], (array) ($item['content_types'] ?? []), true))
@@ -402,7 +447,10 @@ class HC_Blocks {
 		$store = self::store();
 		$live  = array_filter($store, fn($e) => (time() - (int) ($e['seen'] ?? 0)) <= 60 * DAY_IN_SECONDS
 			&& ($e['q']['site'] ?? '') === (string) hub_client_opt('site'));
-		if (count($live) !== count($store)) self::save($live);
+		foreach (array_diff_key($store, $live) as $id => $e) {
+			delete_option(self::DATA . $id);
+			self::update_entry((string) $id, null);
+		}
 		return $live;
 	}
 
@@ -476,7 +524,8 @@ class HC_Blocks {
 			case 'id':
 				return (string) (int) ($item['id'] ?? 0);
 			case 'html':
-				return wp_kses_post((string) ($item['html'] ?? ''));
+				// Cleaned when it was fetched; older stored data is cleaned here.
+				return !empty($item['_safe']) ? (string) ($item['html'] ?? '') : wp_kses_post((string) ($item['html'] ?? ''));
 			case 'cta_url':
 				return esc_url((string) ($item['cta_url'] ?? ''));
 			case 'image':

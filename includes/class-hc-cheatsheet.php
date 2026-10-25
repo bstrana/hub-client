@@ -159,7 +159,7 @@ class HC_Cheatsheet {
 					<tr>
 						<td><code><?php echo esc_html(!empty($q['placement']) ? 'placement=' . $q['placement'] : 'type=' . ($q['type'] ?? '')); ?></code><?php echo isset($q['per_page']) ? ' <span class="description">limit ' . (int) $q['per_page'] . '</span>' : ''; ?></td>
 						<td><?php echo esc_html($q['lang'] ?? '—'); ?></td>
-						<td><?php echo isset($e['data']) ? count((array) $e['data']) : '—'; ?></td>
+						<td><?php echo isset($e['count']) ? (int) $e['count'] : '—'; ?></td>
 						<td><?php echo !empty($e['fetched']) ? esc_html(wp_date('Y-m-d H:i', (int) $e['fetched'])) : esc_html__('not loaded yet', 'hub-client'); ?></td>
 						<td><?php echo !empty($e['error']) ? '<span style="color:#b32d2e">' . esc_html($e['error']) . '</span>' : '<span style="color:#008a20">OK</span>'; ?></td>
 					</tr>
