@@ -87,25 +87,69 @@ class HC_Admin {
 			'store_as' => 'post', 'cpt_slug' => 'novosti', 'author' => 0, 'editor_fetch' => 1, 'nightly' => 0, 'purge_cache' => 1, 'copy_images' => 1, 'rev_copies' => 0, 'rev_other' => '', 'lang_mode' => 'visitor',
 		]);
 		$n = fn($k) => esc_attr("hub_client[$k]");
+		$count = (int) (new WP_Query(['post_type' => HC_Sync::post_type(), 'post_status' => 'any', 'meta_key' => '_hub_id', 'fields' => 'ids', 'posts_per_page' => 1, 'suppress_filters' => true]))->found_posts;
+		$last  = (int) get_option('hub_client_last_sync', 0);
+		$bs    = HC_Blocks::stats();
+		$log   = array_reverse((array) get_option(HC_Sync::LOG, []));
+		$has_secret = defined('HUB_CLIENT_SECRET') || $o['secret'] !== '';
+		$connected  = $o['hub_url'] !== '' && $o['site'] !== '';
+		$btn = fn($action, $label, $primary = false) => sprintf('<a class="button%s" href="%s">%s</a>', $primary ? ' button-primary' : '', esc_url(wp_nonce_url(admin_url('admin-post.php?action=' . $action), $action)), esc_html($label));
+		$box = fn($k, $label) => sprintf('<label style="display:block;margin:0 0 8px"><input type="checkbox" name="hub_client[%s]" value="1" %s> %s</label>', esc_attr($k), checked(!empty($o[$k]), true, false), esc_html($label));
+
+		HC_UI::open('hub-client');
+		HC_UI::header(__('Hub client', 'hub-client'), sprintf(__('Hub Client %s · content from the hub on this site', 'hub-client'), HUB_CLIENT_VERSION), [
+			[$connected ? sprintf(__('site “%s”', 'hub-client'), $o['site']) : __('not connected', 'hub-client'), $connected ? 'ok' : 'bad'],
+			[$has_secret ? __('webhooks on', 'hub-client') : __('no webhook secret', 'hub-client'), $has_secret ? 'ok' : 'warn'],
+			[sprintf(_n('%d section', '%d sections', $bs['sections'], 'hub-client'), $bs['sections']), $bs['errors'] ? 'warn' : 'info'],
+			[sprintf(_n('%d article', '%d articles', $count, 'hub-client'), $count), 'info'],
+		]);
 		if (!empty($_GET['hc_msg'])) {
 			[$kind, $text] = array_pad(explode(':', sanitize_text_field(wp_unslash($_GET['hc_msg'])), 2), 2, '');
 			printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', $kind === 'ok' ? 'success' : 'error', esc_html($text));
 		}
-		$count = (int) (new WP_Query(['post_type' => HC_Sync::post_type(), 'post_status' => 'any', 'meta_key' => '_hub_id', 'fields' => 'ids', 'posts_per_page' => 1, 'suppress_filters' => true]))->found_posts;
-		$last  = (int) get_option('hub_client_last_sync', 0);
+		HC_UI::tabs([
+			'overview'  => [__('Overview', 'hub-client'), 'dashboard'],
+			'connect'   => [__('Connection', 'hub-client'), 'admin-links'],
+			'articles'  => [__('Articles', 'hub-client'), 'media-document'],
+			'sections'  => [__('Sections & speed', 'hub-client'), 'performance'],
+			'languages' => [__('Languages', 'hub-client'), 'translation'],
+			'revisions' => [__('Revisions', 'hub-client'), 'backup'],
+			'activity'  => [__('Activity', 'hub-client'), 'list-view', $log ? min(20, count($log)) : null],
+		]);
 		?>
-		<div class="wrap">
-			<h1><?php esc_html_e('Hub client', 'hub-client'); ?></h1>
-			<p><?php esc_html_e('Articles from the content hub are kept here as local posts, with their own URLs, templates and SEO. Edit them on the hub; local changes are overwritten.', 'hub-client'); ?></p>
-			<p><a href="<?php echo esc_url(admin_url('options-general.php?page=hub-shortcodes')); ?>"><?php esc_html_e('Shortcode and Bricks tag cheat sheet →', 'hub-client'); ?></a></p>
+		<?php HC_UI::panel_open('overview'); ?>
+			<div class="hubui-grid">
+				<?php HC_UI::card_open(__('Status', 'hub-client'), '', 'dashboard', true); ?>
+					<dl class="hubui-kv">
+						<dt><?php esc_html_e('Hub', 'hub-client'); ?></dt><dd><?php echo $o['hub_url'] !== '' ? '<code>' . esc_html($o['hub_url']) . '</code>' : HC_UI::chip(__('not set', 'hub-client'), 'bad'); ?></dd>
+						<dt><?php esc_html_e('This site on the hub', 'hub-client'); ?></dt><dd><?php echo $o['site'] !== '' ? '<code>' . esc_html($o['site']) . '</code>' : HC_UI::chip(__('not set', 'hub-client'), 'bad'); ?></dd>
+						<dt><?php esc_html_e('Page sections', 'hub-client'); ?></dt><dd><?php echo (int) $bs['sections']; ?> · <?php echo $bs['last'] ? esc_html(sprintf(__('refreshed %s', 'hub-client'), wp_date('Y-m-d H:i', $bs['last']))) : esc_html__('never refreshed', 'hub-client'); ?><?php if ($bs['errors']) echo ' ' . HC_UI::chip(sprintf(__('%d failed', 'hub-client'), $bs['errors']), 'warn'); ?></dd>
+						<dt><?php esc_html_e('Articles', 'hub-client'); ?></dt><dd><?php echo (int) $count; ?> · <?php echo $last ? esc_html(sprintf(__('full check %s', 'hub-client'), wp_date('Y-m-d H:i', $last + 60))) : esc_html__('no full check yet', 'hub-client'); ?></dd>
+					</dl>
+					<p class="hubui-actions">
+						<?php echo $btn('hub_client_test', __('Test connection', 'hub-client')); ?>
+						<?php echo $btn('hub_client_refresh', __('Refresh sections now', 'hub-client')); ?>
+						<?php echo $btn('hub_client_sync', __('Sync articles now', 'hub-client'), true); ?>
+					</p>
+				<?php HC_UI::card_close(); ?>
+				<?php HC_UI::card_open(__('Build pages', 'hub-client'), __('Ready-made codes with your hub\'s real placements, types and tags — and an element creator that makes Bricks sections you paste straight into the builder.', 'hub-client'), 'layout', true); ?>
+					<p class="hubui-actions">
+						<a class="button button-primary" href="<?php echo esc_url(admin_url('options-general.php?page=hub-shortcodes#creator')); ?>"><?php esc_html_e('Element creator', 'hub-client'); ?></a>
+						<a class="button" href="<?php echo esc_url(admin_url('options-general.php?page=hub-shortcodes')); ?>"><?php esc_html_e('Shortcode & tag cheat sheet', 'hub-client'); ?></a>
+					</p>
+				<?php HC_UI::card_close(); ?>
+				<?php HC_UI::card_open(__('Connect this site on the hub', 'hub-client'), __('On the hub: Content blocks → Target sites → this site → Webhook URL:', 'hub-client'), 'admin-links', true); ?>
+					<?php echo HC_UI::code(HC_Webhook::url()); ?>
+					<p class="hubui-muted"><?php esc_html_e('Then copy that target site\'s webhook secret (and API key, if the hub requires one) into the Connection tab — or better, into wp-config.php as HUB_CLIENT_SECRET and HUB_CLIENT_KEY.', 'hub-client'); ?></p>
+				<?php HC_UI::card_close(); ?>
+			</div>
+		<?php HC_UI::panel_close(); ?>
 
-			<h2><?php esc_html_e('Connect this site on the hub', 'hub-client'); ?></h2>
-			<p><?php esc_html_e('On the hub: Content blocks → Target sites → this site → Webhook URL:', 'hub-client'); ?></p>
-			<p><input type="text" readonly class="large-text code" value="<?php echo esc_attr(HC_Webhook::url()); ?>" onclick="this.select()"></p>
-			<p class="description"><?php esc_html_e('Then copy that target site\'s webhook secret (and API key, if the hub requires one) into the fields below — or better, into wp-config.php as HUB_CLIENT_SECRET and HUB_CLIENT_KEY.', 'hub-client'); ?></p>
+		<form method="post" action="options.php">
+			<?php settings_fields('hub_client'); ?>
 
-			<form method="post" action="options.php">
-				<?php settings_fields('hub_client'); ?>
+			<?php HC_UI::panel_open('connect'); ?>
+			<?php HC_UI::card_open(__('Connection', 'hub-client'), __('Where the hub is and who this site is there.', 'hub-client'), 'admin-links', true); ?>
 				<table class="form-table" role="presentation">
 					<tr><th><label for="hc_url"><?php esc_html_e('Hub URL', 'hub-client'); ?></label></th>
 						<td><input id="hc_url" type="url" class="regular-text" name="<?php echo $n('hub_url'); ?>" value="<?php echo esc_attr($o['hub_url']); ?>" placeholder="https://hub.yourdomain.hr"></td></tr>
@@ -113,73 +157,98 @@ class HC_Admin {
 						<td><input id="hc_site" type="text" class="regular-text" name="<?php echo $n('site'); ?>" value="<?php echo esc_attr($o['site']); ?>" placeholder="ybc">
 						<p class="description"><?php esc_html_e('The target site slug.', 'hub-client'); ?></p></td></tr>
 					<tr><th><label for="hc_secret"><?php esc_html_e('Webhook secret', 'hub-client'); ?></label></th>
-						<td><?php if (defined('HUB_CLIENT_SECRET')) : ?><em><?php esc_html_e('Set in wp-config.php', 'hub-client'); ?></em>
+						<td><?php if (defined('HUB_CLIENT_SECRET')) : ?><?php echo HC_UI::chip(__('set in wp-config.php', 'hub-client'), 'ok'); ?>
 						<?php else : ?><input id="hc_secret" type="password" class="regular-text" name="<?php echo $n('secret'); ?>" value="" placeholder="<?php echo $o['secret'] ? esc_attr__('saved — leave empty to keep', 'hub-client') : ''; ?>" autocomplete="off"><?php endif; ?></td></tr>
 					<tr><th><label for="hc_key"><?php esc_html_e('API key', 'hub-client'); ?></label></th>
-						<td><?php if (defined('HUB_CLIENT_KEY')) : ?><em><?php esc_html_e('Set in wp-config.php', 'hub-client'); ?></em>
+						<td><?php if (defined('HUB_CLIENT_KEY')) : ?><?php echo HC_UI::chip(__('set in wp-config.php', 'hub-client'), 'ok'); ?>
 						<?php else : ?><input id="hc_key" type="password" class="regular-text" name="<?php echo $n('api_key'); ?>" value="" placeholder="<?php echo $o['api_key'] ? esc_attr__('saved — leave empty to keep', 'hub-client') : esc_attr__('only if the hub requires keys', 'hub-client'); ?>" autocomplete="off"><?php endif; ?></td></tr>
+				</table>
+			<?php HC_UI::card_close(); ?>
+			<?php submit_button(); ?>
+			<?php HC_UI::panel_close(); ?>
+
+			<?php HC_UI::panel_open('articles'); ?>
+			<?php HC_UI::card_open(__('Articles', 'hub-client'), __('Hub items kept here as local posts, with their own URLs, Bricks templates and SEO. Edit them on the hub; local changes are overwritten.', 'hub-client'), 'media-document', true); ?>
+				<table class="form-table" role="presentation">
 					<tr><th><label for="hc_types"><?php esc_html_e('Content types to keep', 'hub-client'); ?></label></th>
-						<td><input id="hc_types" type="text" class="regular-text" name="<?php echo $n('types'); ?>" value="<?php echo esc_attr($o['types']); ?>" placeholder="news,event">
-						<p class="description"><?php esc_html_e('Hub content types that become articles here, comma-separated. Empty = everything for this site. Blocks like heroes and sidebars stay API-only.', 'hub-client'); ?></p></td></tr>
-					<tr><th><label for="hc_langs"><?php esc_html_e('Languages to keep', 'hub-client'); ?></label></th>
-						<td><input id="hc_langs" type="text" class="regular-text" name="<?php echo $n('langs'); ?>" value="<?php echo esc_attr($o['langs']); ?>" placeholder="hr,en">
-						<p class="description"><?php esc_html_e('Empty = all hub languages. With Polylang on this site, versions are linked as translations.', 'hub-client'); ?><br><?php esc_html_e('The first one is this site\'s language.', 'hub-client'); ?></p></td></tr>
-					<tr><th><?php esc_html_e('Section language', 'hub-client'); ?></th>
-						<td>
-							<label><input type="radio" name="hub_client[lang_mode]" value="visitor" <?php checked($o['lang_mode'] !== 'site'); ?>> <?php esc_html_e('Follow the visitor\'s selected language', 'hub-client'); ?></label><br>
-							<label><input type="radio" name="hub_client[lang_mode]" value="site" <?php checked($o['lang_mode'], 'site'); ?>> <?php esc_html_e('Always this site\'s language', 'hub-client'); ?></label>
-							<p class="description"><?php esc_html_e('For pages that are not translated in Polylang/WPML: one page, hub content in the language the visitor chose — with the Polylang/WPML language switcher, or [hub_lang_switch] which stays on the same page. Translated pages always show their own language. Search engines see the site language. Views in other languages are not page-cached (WP Rocket keeps a separate cache per language; other cache plugins: add the cookies hub_lang and pll_language to their "vary" or "don\'t cache" cookie list).', 'hub-client'); ?></p>
-						</td></tr>
+						<td><input id="hc_types" type="text" class="regular-text" name="<?php echo $n('types'); ?>" value="<?php echo esc_attr($o['types']); ?>" placeholder="article,event,listing">
+						<p class="description"><?php esc_html_e('Hub content types that become articles here, comma-separated. Empty = everything for this site. Blocks like heroes and cards stay section-only.', 'hub-client'); ?></p></td></tr>
 					<tr><th><?php esc_html_e('Store as', 'hub-client'); ?></th>
 						<td>
-							<label><input type="radio" name="<?php echo $n('store_as'); ?>" value="post" <?php checked($o['store_as'], 'post'); ?>> <?php esc_html_e('Posts (content types become categories)', 'hub-client'); ?></label><br>
+							<label><input type="radio" name="<?php echo $n('store_as'); ?>" value="post" <?php checked($o['store_as'], 'post'); ?>> <?php esc_html_e('Posts (content types become categories, tags become tags)', 'hub-client'); ?></label><br>
 							<label><input type="radio" name="<?php echo $n('store_as'); ?>" value="hub_article" <?php checked($o['store_as'], 'hub_article'); ?>> <?php esc_html_e('Own post type "Hub articles", URL base:', 'hub-client'); ?></label>
 							<input type="text" class="small-text" style="width:10em" name="<?php echo $n('cpt_slug'); ?>" value="<?php echo esc_attr($o['cpt_slug']); ?>">
 						</td></tr>
 					<tr><th><label for="hc_author"><?php esc_html_e('Author', 'hub-client'); ?></label></th>
 						<td><?php wp_dropdown_users(['name' => 'hub_client[author]', 'id' => 'hc_author', 'selected' => (int) $o['author'], 'capability' => ['edit_posts'], 'show_option_none' => __('First administrator', 'hub-client'), 'option_none_value' => 0]); ?></td></tr>
-					<tr><th><?php esc_html_e('Calls to the hub', 'hub-client'); ?></th>
+				</table>
+			<?php HC_UI::card_close(); ?>
+			<?php submit_button(); ?>
+			<?php HC_UI::panel_close(); ?>
+
+			<?php HC_UI::panel_open('sections'); ?>
+			<?php HC_UI::card_open(__('Calls to the hub', 'hub-client'), __('Content is stored on this site and refreshed only when the hub reports a change. Visitors never cause a call to the hub.', 'hub-client'), 'performance', true); ?>
+				<?php
+				echo $box('editor_fetch', __('Load a new section the first time an editor views it (e.g. right after adding it in Bricks)', 'hub-client'));
+				echo $box('copy_images', __('Copy section images to this site\'s media library (own domain, own sizes and image optimiser; never during a page view)', 'hub-client'));
+				echo $box('purge_cache', __('Purge the page cache after a hub change (WP Rocket, LiteSpeed, W3TC, WP Super Cache, WP Fastest Cache, SiteGround, Breeze, Cache Enabler, Nginx Helper)', 'hub-client'));
+				echo $box('nightly', __('Nightly safety check of articles (repairs missed webhooks; one set of calls per night)', 'hub-client'));
+				?>
+			<?php HC_UI::card_close(); ?>
+			<?php submit_button(); ?>
+			<?php HC_UI::panel_close(); ?>
+
+			<?php HC_UI::panel_open('languages'); ?>
+			<?php HC_UI::card_open(__('Languages', 'hub-client'), __('Content is translated on the hub only; pages here hold the layout.', 'hub-client'), 'translation', true); ?>
+				<table class="form-table" role="presentation">
+					<tr><th><label for="hc_langs"><?php esc_html_e('Languages to keep', 'hub-client'); ?></label></th>
+						<td><input id="hc_langs" type="text" class="regular-text" name="<?php echo $n('langs'); ?>" value="<?php echo esc_attr($o['langs']); ?>" placeholder="hr,en">
+						<p class="description"><?php esc_html_e('Empty = all hub languages. The first one is this site\'s language. With Polylang here, versions are linked as translations.', 'hub-client'); ?></p></td></tr>
+					<tr><th><?php esc_html_e('Section language', 'hub-client'); ?></th>
 						<td>
-							<p class="description" style="margin-top:0"><?php esc_html_e('Content is stored on this site and refreshed only when the hub reports a change (webhook). Visitors never cause a call to the hub.', 'hub-client'); ?></p>
-							<label><input type="checkbox" name="hub_client[editor_fetch]" value="1" <?php checked(!empty($o['editor_fetch'])); ?>> <?php esc_html_e('Load a new section the first time an editor views it (e.g. right after adding it in Bricks)', 'hub-client'); ?></label><br>
-							<label><input type="checkbox" name="hub_client[nightly]" value="1" <?php checked(!empty($o['nightly'])); ?>> <?php esc_html_e('Nightly safety check of articles (repairs missed webhooks; one set of calls per night)', 'hub-client'); ?></label><br>
-							<label><input type="checkbox" name="hub_client[copy_images]" value="1" <?php checked(!empty($o['copy_images'])); ?>> <?php esc_html_e('Copy section images to this site\'s media library (own domain, own image sizes and optimiser; done when content is refreshed, never on page views)', 'hub-client'); ?></label><br>
-							<label><input type="checkbox" name="hub_client[purge_cache]" value="1" <?php checked(!empty($o['purge_cache'])); ?>> <?php esc_html_e('Purge the page cache after a hub change (WP Rocket, LiteSpeed, W3TC, WP Super Cache, WP Fastest Cache, SiteGround, Breeze, Cache Enabler, Nginx Helper)', 'hub-client'); ?></label>
-						</td></tr>
-					<tr><th><?php esc_html_e('Revisions', 'hub-client'); ?></th>
-						<td>
-							<label><?php esc_html_e('Hub article copies keep', 'hub-client'); ?>
-								<input type="number" min="-1" step="1" class="small-text" name="hub_client[rev_copies]" value="<?php echo esc_attr((string) $o['rev_copies']); ?>"> <?php esc_html_e('revisions', 'hub-client'); ?></label>
-							<p class="description"><?php esc_html_e('0 = none (recommended: the hub keeps their history, and every hub edit would add one here). -1 = unlimited.', 'hub-client'); ?></p>
-							<label><?php esc_html_e('All other posts and pages keep', 'hub-client'); ?>
-								<input type="number" min="-1" step="1" class="small-text" name="hub_client[rev_other]" value="<?php echo esc_attr((string) $o['rev_other']); ?>" placeholder="<?php echo esc_attr((string) (defined('WP_POST_REVISIONS') ? (WP_POST_REVISIONS === true ? -1 : (int) WP_POST_REVISIONS) : -1)); ?>"> <?php esc_html_e('revisions', 'hub-client'); ?></label>
-							<p class="description"><?php esc_html_e('Empty = WordPress default (WP_POST_REVISIONS; shown greyed, -1 = unlimited). A value like 10 keeps the database small but still lets you go back to earlier versions.', 'hub-client'); ?></p>
-							<p class="description"><?php esc_html_e('Lowering a limit removes the extra old revisions in the background a minute after saving.', 'hub-client'); ?>
-								<a href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=hub_client_prune'), 'hub_client_prune')); ?>"><?php esc_html_e('Clean up revisions now', 'hub-client'); ?></a></p>
+							<label><input type="radio" name="hub_client[lang_mode]" value="visitor" <?php checked($o['lang_mode'] !== 'site'); ?>> <?php esc_html_e('Follow the visitor\'s selected language', 'hub-client'); ?></label><br>
+							<label><input type="radio" name="hub_client[lang_mode]" value="site" <?php checked($o['lang_mode'], 'site'); ?>> <?php esc_html_e('Always this site\'s language', 'hub-client'); ?></label>
+							<p class="description"><?php esc_html_e('For pages not translated in Polylang/WPML: hub content in the language the visitor chose — with the Polylang switcher or [hub_lang_switch]. Translated pages always show their own language. Other-language views aren\'t page-cached (WP Rocket keeps a cache per language; other cache plugins: add the hub_lang cookie to their vary / don\'t-cache list).', 'hub-client'); ?></p>
 						</td></tr>
 				</table>
-				<?php submit_button(); ?>
-			</form>
+			<?php HC_UI::card_close(); ?>
+			<?php submit_button(); ?>
+			<?php HC_UI::panel_close(); ?>
 
-			<h2><?php esc_html_e('Status', 'hub-client'); ?></h2>
-			<p><?php printf(esc_html__('%1$d synced articles. Last full check: %2$s.', 'hub-client'), $count, $last ? esc_html(wp_date('Y-m-d H:i', $last + 60)) : esc_html__('never', 'hub-client')); ?></p>
-			<?php $bs = HC_Blocks::stats(); ?>
-			<p><?php printf(esc_html__('%1$d page sections in use, last refreshed %2$s%3$s.', 'hub-client'), $bs['sections'], $bs['last'] ? esc_html(wp_date('Y-m-d H:i', $bs['last'])) : esc_html__('never', 'hub-client'), $bs['errors'] ? ' — ' . sprintf(esc_html__('%d with a failed last refresh (previous content still shown)', 'hub-client'), $bs['errors']) : ''); ?></p>
-			<p>
-				<a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=hub_client_test'), 'hub_client_test')); ?>"><?php esc_html_e('Test connection', 'hub-client'); ?></a>
-				<a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=hub_client_refresh'), 'hub_client_refresh')); ?>"><?php esc_html_e('Refresh sections now', 'hub-client'); ?></a>
-				<a class="button button-primary" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=hub_client_sync'), 'hub_client_sync')); ?>"><?php esc_html_e('Sync articles now', 'hub-client'); ?></a>
-			</p>
+			<?php HC_UI::panel_open('revisions'); ?>
+			<?php HC_UI::card_open(__('Revisions', 'hub-client'), __('Keep the database small. Lowering a limit removes the extra old revisions in the background a minute after saving.', 'hub-client'), 'backup', true); ?>
+				<table class="form-table" role="presentation">
+					<tr><th><?php esc_html_e('Hub article copies keep', 'hub-client'); ?></th>
+						<td><input type="number" min="-1" step="1" class="small-text" name="hub_client[rev_copies]" value="<?php echo esc_attr((string) $o['rev_copies']); ?>"> <?php esc_html_e('revisions', 'hub-client'); ?>
+						<p class="description"><?php esc_html_e('0 = none (recommended: the hub keeps their history). -1 = unlimited.', 'hub-client'); ?></p></td></tr>
+					<tr><th><?php esc_html_e('All other posts and pages keep', 'hub-client'); ?></th>
+						<td><input type="number" min="-1" step="1" class="small-text" name="hub_client[rev_other]" value="<?php echo esc_attr((string) $o['rev_other']); ?>" placeholder="<?php echo esc_attr((string) (defined('WP_POST_REVISIONS') ? (WP_POST_REVISIONS === true ? -1 : (int) WP_POST_REVISIONS) : -1)); ?>"> <?php esc_html_e('revisions', 'hub-client'); ?>
+						<p class="description"><?php esc_html_e('Empty = WordPress default. A value like 10 keeps the database small but still lets you go back.', 'hub-client'); ?></p></td></tr>
+				</table>
+				<p class="hubui-actions"><?php echo $btn('hub_client_prune', __('Clean up revisions now', 'hub-client')); ?></p>
+			<?php HC_UI::card_close(); ?>
+			<?php submit_button(); ?>
+			<?php HC_UI::panel_close(); ?>
+		</form>
 
-			<?php $log = array_reverse((array) get_option(HC_Sync::LOG, [])); if ($log) : ?>
-				<h2><?php esc_html_e('Recent activity', 'hub-client'); ?></h2>
-				<table class="widefat striped" style="max-width:900px"><tbody>
-				<?php foreach (array_slice($log, 0, 20) as $e) : ?>
-					<tr><td style="width:140px"><?php echo esc_html(wp_date('Y-m-d H:i', (int) $e['t'])); ?></td><td style="width:90px"><?php echo esc_html($e['what']); ?></td><td style="width:70px"><?php echo $e['id'] ? '#' . (int) $e['id'] : ''; ?></td><td><?php echo esc_html($e['detail']); ?></td></tr>
+		<?php HC_UI::panel_open('activity'); ?>
+		<?php HC_UI::card_open(__('Recent activity', 'hub-client'), __('Webhooks, refreshes and errors — the last 20.', 'hub-client'), 'list-view', true); ?>
+			<?php if (!$log) : ?>
+				<p class="hubui-muted"><?php esc_html_e('Nothing yet.', 'hub-client'); ?></p>
+			<?php else : ?>
+				<table class="hubui-table"><tbody>
+				<?php foreach (array_slice($log, 0, 20) as $e) :
+					$bad = (bool) preg_match('/fail|error|reject|not /i', (string) $e['detail']); ?>
+					<tr><td style="width:130px" class="hubui-muted"><?php echo esc_html(wp_date('Y-m-d H:i', (int) $e['t'])); ?></td>
+						<td style="width:110px"><?php echo HC_UI::chip((string) $e['what'], $bad ? 'warn' : 'info'); ?></td>
+						<td style="width:70px"><?php echo $e['id'] ? '#' . (int) $e['id'] : ''; ?></td>
+						<td><?php echo esc_html($e['detail']); ?></td></tr>
 				<?php endforeach; ?>
 				</tbody></table>
 			<?php endif; ?>
-		</div>
+		<?php HC_UI::card_close(); ?>
+		<?php HC_UI::panel_close(); ?>
 		<?php
+		HC_UI::close();
 	}
 }
