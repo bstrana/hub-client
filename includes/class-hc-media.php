@@ -11,7 +11,7 @@ class HC_Media {
 
 	/** @return int attachment ID, or 0 if it couldn't be copied */
 	public static function local_id(string $url, string $alt = '', int $parent = 0): int {
-		if ($url === '') return 0;
+		if ($url === '' || !self::allowed($url)) return 0;
 		static $seen = [];
 		if (isset($seen[$url])) return $seen[$url];
 
@@ -34,6 +34,22 @@ class HC_Media {
 			update_post_meta($id, '_wp_attachment_image_alt', sanitize_text_field($alt));
 		}
 		return $seen[$url] = $id;
+	}
+
+	/**
+	 * Images are only downloaded from the hub's own host (and hosts added with the
+	 * hub_client_image_hosts filter, e.g. an image CDN), over HTTPS unless HTTP is allowed
+	 * for testing — so even a compromised hub can't make this site fetch arbitrary URLs.
+	 */
+	public static function allowed(string $url): bool {
+		$host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
+		$hub  = strtolower((string) wp_parse_url((string) hub_client_opt('hub_url'), PHP_URL_HOST));
+		$hosts = (array) apply_filters('hub_client_image_hosts', array_filter([$hub]));
+		$scheme = strtolower((string) wp_parse_url($url, PHP_URL_SCHEME));
+		$ok = $host !== '' && in_array($host, array_map('strtolower', $hosts), true)
+			&& ($scheme === 'https' || ($scheme === 'http' && apply_filters('hub_client_allow_http', false)));
+		if (!$ok) HC_Sync::log('image', 0, 'not downloaded (host not allowed): ' . $url);
+		return $ok;
 	}
 
 	/** Add local attachment IDs to a list of hub items (in place). */

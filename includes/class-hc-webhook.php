@@ -43,7 +43,11 @@ class HC_Webhook {
 		$ts   = (string) $r->get_header('x_hub_timestamp');
 		$sig  = (string) $r->get_header('x_hub_signature');
 		if (!self::verify($body, $ts, $sig, $secret)) {
-			HC_Sync::log('webhook', 0, 'rejected: bad or expired signature');
+			// Log at most once a minute, so a flood of junk requests can't turn into DB writes.
+			if (!get_transient('hc_wh_rejected')) {
+				set_transient('hc_wh_rejected', 1, MINUTE_IN_SECONDS);
+				HC_Sync::log('webhook', 0, 'rejected: bad or expired signature');
+			}
 			return new WP_Error('hc_bad_signature', 'Invalid signature.', ['status' => 401]);
 		}
 
