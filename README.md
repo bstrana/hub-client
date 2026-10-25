@@ -123,6 +123,12 @@ Caching and SEO with "visitor's language": views in another language than the si
 
 Polylang isn't required for this. You need it only for: text that isn't from the hub (menus, footer, texts typed in Bricks) in several languages; separate URLs per language for SEO; or keeping article copies in several languages apart (archives, sitemaps, `/en/` URLs).
 
+### Element creator (paste into Bricks)
+
+**Settings → Hub shortcodes → Element creator**: pick a pattern — Hero, Cards (fixed number), Cards (any number), Text block, Next event, Upcoming events, Logo row, FAQ — and where the content comes from (placement, content type, tag or upcoming events, chosen with the pickers at the top). Set a section title, number of items, columns, light/dark and an accent colour, then **Copy for Bricks** and paste in the builder (Ctrl/Cmd+V or right-click → Paste).
+
+The section arrives as native Bricks elements (section, container, blocks, heading, text, image, buttons) using `{hub:…}` tags, so you style and edit it in Bricks as usual. Lists of any length, maps and FAQs use a Shortcode element with `[hub_loop]` / `[hub_map]`. **Copy as shortcode** gives the same thing for other builders.
+
 ### Cheat sheet
 
 **Settings → Hub shortcodes** (also linked from the Plugins screen): every shortcode and Bricks tag with your hub's real placements, content types and languages filled in, click-to-copy codes, ready-made hero / cards / news recipes, and the list of sections in use on this site with when each was last refreshed.

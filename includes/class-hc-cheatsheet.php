@@ -107,124 +107,149 @@ class HC_Cheatsheet {
 			__('Latest articles with links', 'hub-client') => "[hub_loop type=\"{T}\" limit=\"3\" wrap=\"ul\" class=\"news\"]\n  <li>\n    [hub_image size=\"medium\"]\n    [hub_link to=\"article\" text=\"title\"]\n    <time>[hub field=\"date\"]</time>\n  </li>\n[/hub_loop]",
 		];
 		$store = HC_Blocks::live_registry();
+		$opts  = function (array $list, string $sel = '') {
+			foreach ($list as $slug => $name) printf('<option value="%s"%s>%s</option>', esc_attr($slug), selected($slug, $sel, false), esc_html($name === $slug ? $slug : "$name ($slug)"));
+		};
+		HC_UI::open('hub-shortcodes');
+		HC_UI::header(__('Hub shortcodes & element creator', 'hub-client'), __('Codes filled in with your hub\'s real placements, types and tags. Click any code to copy it.', 'hub-client'), [
+			[sprintf(__('%d placements', 'hub-client'), count($place)), 'info'],
+			[sprintf(__('%d types', 'hub-client'), count($types)), 'info'],
+			[sprintf(__('%d tags', 'hub-client'), count(HC_Meta::tags($meta))), 'info'],
+			[empty($meta['error']) ? __('hub reachable', 'hub-client') : __('hub not reached', 'hub-client'), empty($meta['error']) ? 'ok' : 'warn'],
+		]);
 		?>
-		<div class="wrap hub-cheat">
-			<h1><?php esc_html_e('Hub shortcodes', 'hub-client'); ?></h1>
 			<?php if (!empty($meta['error'])) : ?>
 				<div class="notice notice-warning inline"><p><?php echo esc_html(sprintf(__('Couldn\'t load placements from the hub (%s). Examples use placeholders; check Settings → Hub client.', 'hub-client'), $meta['error'])); ?></p></div>
 			<?php endif; ?>
 
 			<div class="hub-pick">
-				<label><?php esc_html_e('Placement', 'hub-client'); ?>
-					<select data-token="P"><?php foreach ($place as $slug => $name) printf('<option value="%s">%s</option>', esc_attr($slug), esc_html($name === $slug ? $slug : "$name ($slug)")); ?></select></label>
-				<label><?php esc_html_e('Content type', 'hub-client'); ?>
-					<select data-token="T"><?php foreach ($types as $slug => $name) printf('<option value="%s"%s>%s</option>', esc_attr($slug), selected($slug, $T, false), esc_html($name === $slug ? $slug : "$name ($slug)")); ?></select></label>
-				<label><?php esc_html_e('Event type', 'hub-client'); ?>
-					<select data-token="E"><?php foreach (($types ?: [$E => $E]) as $slug => $name) printf('<option value="%s"%s>%s</option>', esc_attr($slug), selected($slug, $E, false), esc_html($name === $slug ? $slug : "$name ($slug)")); ?></select></label>
-				<label><?php esc_html_e('Tag', 'hub-client'); ?>
-					<select data-token="G"><?php foreach ($tagl as $slug => $name) printf('<option value="%s">%s</option>', esc_attr($slug), esc_html($name === $slug ? $slug : "$name ($slug)")); ?></select></label>
-				<label><?php esc_html_e('Language', 'hub-client'); ?>
-					<select data-token="L"><?php foreach ($langs as $l) printf('<option value="%s"%s>%s</option>', esc_attr($l), selected($l, $L, false), esc_html($l)); ?></select></label>
-				<span class="description"><?php esc_html_e('Pick values and every example below updates. Click a code to copy it.', 'hub-client'); ?></span>
+				<label><span><?php esc_html_e('Placement', 'hub-client'); ?></span><select data-token="P"><?php $opts($place); ?></select></label>
+				<label><span><?php esc_html_e('Content type', 'hub-client'); ?></span><select data-token="T"><?php $opts($types, $T); ?></select></label>
+				<label><span><?php esc_html_e('Event type', 'hub-client'); ?></span><select data-token="E"><?php $opts($types ?: [$E => $E], $E); ?></select></label>
+				<label><span><?php esc_html_e('Tag', 'hub-client'); ?></span><select data-token="G"><?php $opts($tagl); ?></select></label>
+				<label><span><?php esc_html_e('Language', 'hub-client'); ?></span><select data-token="L"><?php foreach ($langs as $l) printf('<option value="%s"%s>%s</option>', esc_attr($l), selected($l, $L, false), esc_html($l)); ?></select></label>
 			</div>
 
-			<h2><?php esc_html_e('In Bricks: which to use where', 'hub-client'); ?></h2>
-			<table class="widefat striped hub-where"><tbody>
-				<tr><td><strong><?php esc_html_e('Heading, Basic Text, Button text, Image source, Link URL, attributes', 'hub-client'); ?></strong></td><td><?php esc_html_e('Dynamic tags {hub:…} — Bricks does not run shortcodes in these fields.', 'hub-client'); ?></td></tr>
-				<tr><td><strong><?php esc_html_e('Shortcode element', 'hub-client'); ?></strong></td><td><?php esc_html_e('[hub_loop] lists, [hub_image], [hub_link], the html field, any HTML you write around them.', 'hub-client'); ?></td></tr>
-				<tr><td><strong><?php esc_html_e('Rich Text', 'hub-client'); ?></strong></td><td><?php esc_html_e('Either.', 'hub-client'); ?></td></tr>
-			</tbody></table>
+			<?php HC_UI::tabs([
+				'creator'    => [__('Element creator', 'hub-client'), 'layout'],
+				'bricks'     => [__('Bricks tags', 'hub-client'), 'tag'],
+				'shortcodes' => [__('Shortcodes', 'hub-client'), 'shortcode'],
+				'recipes'    => [__('Recipes', 'hub-client'), 'clipboard'],
+				'fields'     => [__('Fields & tips', 'hub-client'), 'info-outline'],
+				'inuse'      => [__('Sections in use', 'hub-client'), 'database', count($store)],
+			]); ?>
 
-			<h2><?php esc_html_e('Bricks dynamic tags', 'hub-client'); ?></h2>
-			<?php self::table($bricks); ?>
+			<?php HC_UI::panel_open('creator'); ?>
+				<?php self::creator(); ?>
+			<?php HC_UI::panel_close(); ?>
 
-			<h2><?php esc_html_e('Shortcodes', 'hub-client'); ?></h2>
-			<?php self::table($shortcodes); ?>
+			<?php HC_UI::panel_open('bricks'); ?>
+				<div class="hubui-card accent">
+					<table class="hubui-table"><tbody>
+						<tr><td><strong><?php esc_html_e('Heading, Basic Text, Button text, Image source, Link URL, attributes', 'hub-client'); ?></strong></td><td><?php esc_html_e('Dynamic tags {hub:…} — Bricks does not run shortcodes in these fields.', 'hub-client'); ?></td></tr>
+						<tr><td><strong><?php esc_html_e('Shortcode element', 'hub-client'); ?></strong></td><td><?php esc_html_e('[hub_loop] lists, [hub_image], [hub_link], [hub_map], the html field, any HTML around them.', 'hub-client'); ?></td></tr>
+						<tr><td><strong><?php esc_html_e('Rich Text', 'hub-client'); ?></strong></td><td><?php esc_html_e('Either.', 'hub-client'); ?></td></tr>
+					</tbody></table>
+				</div>
+				<div class="hubui-card"><?php self::table($bricks); ?></div>
+			<?php HC_UI::panel_close(); ?>
 
-			<h2><?php esc_html_e('Fields', 'hub-client'); ?></h2>
-			<p class="hub-fields"><?php foreach ($fields as $f => $d) printf('<code class="hub-copy" data-copy="%1$s">%1$s</code> <span>%2$s</span> ', esc_html($f), esc_html($d)); ?></p>
+			<?php HC_UI::panel_open('shortcodes'); ?>
+				<div class="hubui-card"><?php self::table($shortcodes); ?></div>
+			<?php HC_UI::panel_close(); ?>
 
-			<h2><?php esc_html_e('Ready-made', 'hub-client'); ?></h2>
-			<?php foreach ($recipes as $title => $code) : ?>
-				<h3><?php echo esc_html($title); ?></h3>
-				<pre class="hub-copy hub-tpl" data-tpl="<?php echo esc_attr($code); ?>"></pre>
-			<?php endforeach; ?>
-
-			<h2><?php esc_html_e('Good to know', 'hub-client'); ?></h2>
-			<ul class="ul-disc">
-				<li><?php echo wp_kses_post(__('Never put a shortcode inside <code>href="…"</code> with double quotes — use <code>[hub_link]</code> or <code>[hub_image]</code>, which output the whole tag.', 'hub-client')); ?></li>
-				<li><?php esc_html_e('Use [hub_link] without a closing tag — always self-closing.', 'hub-client'); ?></li>
-				<li><?php esc_html_e('Empty output? Open the page logged in as administrator: a small red note in its place says why. Visitors never see it.', 'hub-client'); ?></li>
-				<li><?php esc_html_e('Content is stored on this site and refreshed only when the hub reports a change. A brand-new section loads the first time an editor views it (or with "Refresh sections now").', 'hub-client'); ?></li>
-				<li><?php esc_html_e('Language: by default the page\'s Polylang/WPML language; otherwise the first of "Languages to keep".', 'hub-client'); ?></li>
-			</ul>
-
-			<h2><?php esc_html_e('Sections in use on this site', 'hub-client'); ?></h2>
-			<?php if (!$store) : ?>
-				<p><?php esc_html_e('None yet. They appear here once a page with hub content has been viewed.', 'hub-client'); ?></p>
-			<?php else : ?>
-				<table class="widefat striped"><thead><tr>
-					<th><?php esc_html_e('Source', 'hub-client'); ?></th><th><?php esc_html_e('Language', 'hub-client'); ?></th><th><?php esc_html_e('Items', 'hub-client'); ?></th><th><?php esc_html_e('Last refreshed', 'hub-client'); ?></th><th><?php esc_html_e('Status', 'hub-client'); ?></th>
-				</tr></thead><tbody>
-				<?php foreach ($store as $e) : $q = $e['q']; ?>
-					<tr>
-						<td><code><?php echo esc_html(!empty($q['placement']) ? 'placement=' . $q['placement'] : 'type=' . ($q['type'] ?? '')); ?></code><?php echo isset($q['per_page']) ? ' <span class="description">limit ' . (int) $q['per_page'] . '</span>' : ''; ?></td>
-						<td><?php echo esc_html($q['lang'] ?? '—'); ?></td>
-						<td><?php echo isset($e['count']) ? (int) $e['count'] : '—'; ?></td>
-						<td><?php echo !empty($e['fetched']) ? esc_html(wp_date('Y-m-d H:i', (int) $e['fetched'])) : esc_html__('not loaded yet', 'hub-client'); ?></td>
-						<td><?php echo !empty($e['error']) ? '<span style="color:#b32d2e">' . esc_html($e['error']) . '</span>' : '<span style="color:#008a20">OK</span>'; ?></td>
-					</tr>
+			<?php HC_UI::panel_open('recipes'); ?>
+				<div class="hubui-grid">
+				<?php foreach ($recipes as $title => $code) : ?>
+					<?php HC_UI::card_open($title, __('For a Shortcode element. Click to copy.', 'hub-client'), 'clipboard'); ?>
+						<pre class="hubui-copy hub-tpl" data-tpl="<?php echo esc_attr($code); ?>"></pre>
+					<?php HC_UI::card_close(); ?>
 				<?php endforeach; ?>
-				</tbody></table>
-				<?php if (current_user_can('manage_options')) : ?>
-					<p><a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=hub_client_refresh'), 'hub_client_refresh')); ?>"><?php esc_html_e('Refresh sections now', 'hub-client'); ?></a></p>
+				</div>
+			<?php HC_UI::panel_close(); ?>
+
+			<?php HC_UI::panel_open('fields'); ?>
+				<?php HC_UI::card_open(__('Fields', 'hub-client'), __('Use with field="…" or as the last part of a {hub:…} tag.', 'hub-client'), 'editor-table', true); ?>
+					<p class="hub-fields"><?php foreach ($fields as $f => $d) printf('<code class="hubui-copy" data-copy="%1$s">%1$s</code> <span>%2$s</span> ', esc_html($f), esc_html($d)); ?></p>
+				<?php HC_UI::card_close(); ?>
+				<?php HC_UI::card_open(__('Good to know', 'hub-client'), '', 'lightbulb', true); ?>
+					<ul class="ul-disc">
+						<li><?php echo wp_kses_post(__('Never put a shortcode inside <code>href="…"</code> with double quotes — use <code>[hub_link]</code> or <code>[hub_image]</code>, which output the whole tag.', 'hub-client')); ?></li>
+						<li><?php esc_html_e('Use [hub_link] without a closing tag — always self-closing.', 'hub-client'); ?></li>
+						<li><?php esc_html_e('Empty output? Open the page logged in as administrator: a small red note in its place says why. Visitors never see it.', 'hub-client'); ?></li>
+						<li><?php esc_html_e('Content is stored on this site and refreshed only when the hub reports a change. A brand-new section loads the first time an editor views it (or with "Refresh sections now").', 'hub-client'); ?></li>
+						<li><?php esc_html_e('Language: a translated page shows its own language; other pages follow the visitor\'s chosen language (Settings → Hub client → Languages).', 'hub-client'); ?></li>
+					</ul>
+				<?php HC_UI::card_close(); ?>
+			<?php HC_UI::panel_close(); ?>
+
+			<?php HC_UI::panel_open('inuse'); ?>
+			<?php HC_UI::card_open(__('Sections in use on this site', 'hub-client'), __('Every hub section a page has shown in the last 60 days. Webhooks keep these current.', 'hub-client'), 'database', true); ?>
+				<?php if (!$store) : ?>
+					<p class="hubui-muted"><?php esc_html_e('None yet. They appear here once a page with hub content has been viewed.', 'hub-client'); ?></p>
+				<?php else : ?>
+					<table class="hubui-table"><thead><tr>
+						<th><?php esc_html_e('Source', 'hub-client'); ?></th><th><?php esc_html_e('Language', 'hub-client'); ?></th><th><?php esc_html_e('Items', 'hub-client'); ?></th><th><?php esc_html_e('Last refreshed', 'hub-client'); ?></th><th><?php esc_html_e('Status', 'hub-client'); ?></th>
+					</tr></thead><tbody>
+					<?php foreach ($store as $e) : $q = $e['q'];
+						$src = [];
+						foreach (['placement', 'type', 'tag'] as $k) if (!empty($q[$k])) $src[] = "$k=" . $q[$k];
+						if (!empty($q['upcoming'])) $src[] = 'upcoming'; ?>
+						<tr>
+							<td><code><?php echo esc_html(implode(' ', $src)); ?></code><?php echo isset($q['per_page']) ? ' <span class="hubui-muted">limit ' . (int) $q['per_page'] . '</span>' : ''; ?></td>
+							<td><?php echo esc_html($q['lang'] ?? '—'); ?></td>
+							<td><?php echo isset($e['count']) ? (int) $e['count'] : '—'; ?></td>
+							<td><?php echo !empty($e['fetched']) ? esc_html(wp_date('Y-m-d H:i', (int) $e['fetched'])) : esc_html__('not loaded yet', 'hub-client'); ?></td>
+							<td><?php echo !empty($e['error']) ? HC_UI::chip($e['error'], 'bad') : HC_UI::chip('OK', 'ok'); ?></td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody></table>
+					<?php if (current_user_can('manage_options')) : ?>
+						<p class="hubui-actions"><a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=hub_client_refresh'), 'hub_client_refresh')); ?>"><?php esc_html_e('Refresh sections now', 'hub-client'); ?></a></p>
+					<?php endif; ?>
 				<?php endif; ?>
-			<?php endif; ?>
-		</div>
+			<?php HC_UI::card_close(); ?>
+			<?php HC_UI::panel_close(); ?>
 
 		<style>
-			.hub-cheat h2 { margin-top: 2em; }
-			.hub-pick { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; background: #fff; border: 1px solid #c3c4c7; padding: 12px 16px; position: sticky; top: 32px; z-index: 5; }
-			.hub-pick label { display: flex; gap: 6px; align-items: center; font-weight: 600; }
-			.hub-cheat table.hub-codes td:first-child { width: 48%; }
-			.hub-copy { cursor: copy; }
-			.hub-cheat code.hub-copy { display: inline-block; padding: 3px 6px; }
-			.hub-cheat pre.hub-copy { background: #f6f7f7; border: 1px solid #dcdcde; padding: 12px 14px; max-width: 900px; white-space: pre-wrap; font-size: 13px; }
-			.hub-copy.copied { outline: 2px solid #00a32a; }
-			.hub-fields { line-height: 2.2; max-width: 1000px; }
-			.hub-fields span { color: #646970; margin-right: 12px; }
+			.hub-pick{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:#fff;border:1px solid #dcdcde;border-radius:10px;padding:10px 16px;margin-top:12px;position:sticky;top:32px;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.04)}
+			.hub-pick label{display:flex;gap:6px;align-items:center}
+			.hub-pick label span{font-weight:600;font-size:12px;color:#646970;text-transform:uppercase;letter-spacing:.04em}
+			.hubui table.hub-codes td:first-child{width:48%}
+			.hubui code.hubui-copy{display:inline-block;padding:3px 6px;cursor:copy}
+			.hubui pre.hubui-copy{background:#f6f7f7;border:1px solid #dcdcde;border-radius:6px;padding:12px 14px;white-space:pre-wrap;font-size:12.5px;cursor:copy;margin:0}
+			.hub-fields{line-height:2.3}
+			.hub-fields span{color:#646970;margin-right:12px}
 		</style>
 		<script>
 		(function () {
-			const picks = {};
-			document.querySelectorAll('.hub-pick select').forEach(s => { picks[s.dataset.token] = s; s.addEventListener('change', fill); });
+			var picks = {};
+			document.querySelectorAll('.hub-pick select').forEach(function (s) { picks[s.dataset.token] = s; s.addEventListener('change', fill); });
 			function fill() {
-				document.querySelectorAll('[data-tpl]').forEach(el => {
-					let t = el.dataset.tpl;
-					for (const k in picks) t = t.split('{' + k + '}').join(picks[k].value);
+				document.querySelectorAll('[data-tpl]').forEach(function (el) {
+					var t = el.dataset.tpl;
+					for (var k in picks) t = t.split('{' + k + '}').join(picks[k].value);
 					el.textContent = t;
 					el.dataset.copy = t;
 				});
+				document.dispatchEvent(new CustomEvent('hub-picks', { detail: picks }));
 			}
-			document.addEventListener('click', e => {
-				const el = e.target.closest('.hub-copy');
-				if (!el) return;
-				const text = el.dataset.copy || el.textContent;
-				const done = () => { el.classList.add('copied'); setTimeout(() => el.classList.remove('copied'), 900); };
-				if (navigator.clipboard) navigator.clipboard.writeText(text).then(done); else {
-					const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand('copy'); done();
-				}
-			});
+			window.hubPicks = picks;
 			fill();
 		})();
 		</script>
 		<?php
+		HC_UI::close();
+	}
+
+	private static function creator(): void {
+		HC_Creator::render();
 	}
 
 	private static function table(array $rows): void {
-		echo '<table class="widefat striped hub-codes"><tbody>';
+		echo '<table class="hubui-table hub-codes"><tbody>';
 		foreach ($rows as [$code, $what]) {
-			printf('<tr><td><code class="hub-copy" data-tpl="%s"></code></td><td>%s</td></tr>', esc_attr($code), esc_html($what));
+			printf('<tr><td><code class="hubui-copy" data-tpl="%s"></code></td><td>%s</td></tr>', esc_attr($code), esc_html($what));
 		}
 		echo '</tbody></table>';
 	}
