@@ -57,6 +57,20 @@ The tag format:
 
 **Event fields:** `event_start`, `event_end` (date + time; `format="…"` works), `event_date`, `event_time`, `location`, `map_url` (directions link), `map_lat`, `map_lng`, `stream_url`. Also `seo_title`, `seo_description`.
 
+### Tags
+
+| Shortcode / tag | Output |
+|---|---|
+| `[hub_loop tag="summer-camp"] … [/hub_loop]` | items with that tag, newest first |
+| `[hub_loop type="news" tag="summer-camp" limit="3"]` | a content type, only with that tag |
+| `[hub_loop placement="home-cards" tag="kids"]` | a placement, only blocks with that tag (in their Order) |
+| `tag="a,b"` / `tag="a+b"` | any of the tags / all of them |
+| `[hub tag="kids" field="title" index="2"]` | works on every shortcode |
+| `{hub:tag.summer-camp:title}` | Bricks: newest item with that tag |
+| `[hub field="tags"]` | the item's tags, comma-separated |
+
+Article copies get the hub tags as post tags (or *Article tags* with the own post type), so Bricks tag archives and query loops by tag work.
+
 ### Events, maps, second button
 
 | Shortcode | Output |

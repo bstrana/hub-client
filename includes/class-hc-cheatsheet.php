@@ -31,9 +31,11 @@ class HC_Cheatsheet {
 		$P = (string) array_key_first($place);
 		$T = isset($types['news']) ? 'news' : (string) array_key_first($types);
 		$E = (string) (HC_Blocks::event_types(array_keys($types))[0] ?? 'event');
+		$tagl = HC_Meta::tags($meta) ?: ['my-tag' => 'my-tag'];
+		$G = (string) array_key_first($tagl);
 		$L = HC_Blocks::current_lang() ?: (string) ($langs[0] ?? 'hr');
 
-		// $rows: [code, what it does]. Tokens {P} {T} {E} {L} are replaced live by the pickers.
+		// $rows: [code, what it does]. Tokens {P} {T} {E} {G} {L} are replaced live by the pickers.
 		$bricks = [
 			['{hub:{P}:title}', __('Heading / Basic Text — title of the first item', 'hub-client')],
 			['{hub:{P}:excerpt}', __('Short text', 'hub-client')],
@@ -53,6 +55,7 @@ class HC_Cheatsheet {
 			['{hub:next.{E}:location} / {hub:next.{E}:map_url}', __('Location / directions link', 'hub-client')],
 			['{hub:next.{E}:map_lat} {hub:next.{E}:map_lng}', __('Map element → coordinates', 'hub-client')],
 			['{hub:next.{E}:stream_url}', __('Live stream link', 'hub-client')],
+			['{hub:tag.{G}:title}', __('Newest item with a tag (2nd = :2 …)', 'hub-client')],
 		];
 		$shortcodes = [
 			['[hub placement="{P}" field="title"]', __('One field of the first item', 'hub-client')],
@@ -72,6 +75,11 @@ class HC_Cheatsheet {
 			['[hub field="event_start" format="j.n.Y. H:i"]', __('Event date with your own format', 'hub-client')],
 			['[hub_link to="map" text="Upute za dolazak"]', __('Directions link (opens Google Maps)', 'hub-client')],
 			['[hub_link to="stream" text="Gledaj uživo"]', __('Live stream link', 'hub-client')],
+			['[hub_loop tag="{G}" limit="6"] … [/hub_loop]', __('Items with a tag, newest first', 'hub-client')],
+			['[hub_loop type="{T}" tag="{G}" limit="3"] … [/hub_loop]', __('A content type, only with this tag', 'hub-client')],
+			['[hub_loop placement="{P}" tag="{G}"] … [/hub_loop]', __('A placement, only blocks with this tag (in their Order)', 'hub-client')],
+			['[hub_loop tag="{G},other-tag"] … [/hub_loop]', __('Any of several tags; tag="a+b" = must have all of them', 'hub-client')],
+			['[hub field="tags"]', __('The item\'s tags, comma-separated', 'hub-client')],
 			['[hub_map type="{E}" upcoming="1" height="320"]', __('Embedded map with directions link (OpenStreetMap; provider="google" for Google)', 'hub-client')],
 		];
 		$fields = [
@@ -87,6 +95,7 @@ class HC_Cheatsheet {
 			'event_date' => __('event start date', 'hub-client'), 'event_time' => __('event start time', 'hub-client'),
 			'location' => __('location / address', 'hub-client'), 'map_url' => __('directions link', 'hub-client'),
 			'map_lat' => __('latitude', 'hub-client'), 'map_lng' => __('longitude', 'hub-client'), 'stream_url' => __('live stream link', 'hub-client'),
+			'tags' => __('tags, comma-separated', 'hub-client'),
 			'seo_title' => __('SEO title', 'hub-client'), 'seo_description' => __('meta description', 'hub-client'),
 		];
 		$recipes = [
@@ -112,6 +121,8 @@ class HC_Cheatsheet {
 					<select data-token="T"><?php foreach ($types as $slug => $name) printf('<option value="%s"%s>%s</option>', esc_attr($slug), selected($slug, $T, false), esc_html($name === $slug ? $slug : "$name ($slug)")); ?></select></label>
 				<label><?php esc_html_e('Event type', 'hub-client'); ?>
 					<select data-token="E"><?php foreach (($types ?: [$E => $E]) as $slug => $name) printf('<option value="%s"%s>%s</option>', esc_attr($slug), selected($slug, $E, false), esc_html($name === $slug ? $slug : "$name ($slug)")); ?></select></label>
+				<label><?php esc_html_e('Tag', 'hub-client'); ?>
+					<select data-token="G"><?php foreach ($tagl as $slug => $name) printf('<option value="%s">%s</option>', esc_attr($slug), esc_html($name === $slug ? $slug : "$name ($slug)")); ?></select></label>
 				<label><?php esc_html_e('Language', 'hub-client'); ?>
 					<select data-token="L"><?php foreach ($langs as $l) printf('<option value="%s"%s>%s</option>', esc_attr($l), selected($l, $L, false), esc_html($l)); ?></select></label>
 				<span class="description"><?php esc_html_e('Pick values and every example below updates. Click a code to copy it.', 'hub-client'); ?></span>
