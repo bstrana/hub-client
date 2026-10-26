@@ -195,6 +195,16 @@ An optional **nightly check** (Settings → Hub client → *Calls to the hub*) p
 
 Edit articles **on the hub**. Local edits are overwritten on the next update; the editor shows a notice with a link to the hub item.
 
+## Post types for this site
+
+**Settings → Hub client → Post types**: give hub content its own post type on this site — e.g. **Turniri** at `/turniri/` fed by the hub's `event` type, **Usluge** at `/usluge/` fed by `listing`.
+
+Per post type: name (plural/singular), URL base, archive page on/off, menu icon, and the hub content types that feed it (each hub type feeds at most one post type). Hub items of those types are kept here as that post type — with their hub content type and tags (*Article types* / *Article tags*), all hub fields as custom fields, Polylang translation links, SEO, sitemaps. Types not in any post type go where *Store as* says. Types in a post type are kept automatically, even if they aren't in *Content types to keep*.
+
+Content is still written and translated on the hub; there is no *Add new* here. In Bricks, make Single and Archive templates with the condition *Post type → …* and use the post type in query loops.
+
+Adding, changing or removing a post type moves existing copies (a minute later, in the background) — removing one moves its articles back to Posts / Hub articles. URLs change accordingly.
+
 ## SEO for shared articles
 
 If the hub sets an article's **Canonical site** to another site:
