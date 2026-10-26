@@ -55,6 +55,7 @@ class HC_Cheatsheet {
 			['{hub:next.{E}:location} / {hub:next.{E}:map_url}', __('Location / directions link', 'hub-client')],
 			['{hub:next.{E}:map_lat} {hub:next.{E}:map_lng}', __('Map element → coordinates', 'hub-client')],
 			['{hub:next.{E}:stream_url}', __('Live stream link', 'hub-client')],
+			['{hub:{P}:data.weight}', __('Value of an "@weight: …" line in the hub content', 'hub-client')],
 			['{hub:tag.{G}:title}', __('Newest item with a tag (2nd = :2 …)', 'hub-client')],
 		];
 		$shortcodes = [
@@ -79,6 +80,7 @@ class HC_Cheatsheet {
 			['[hub_loop type="{T}" tag="{G}" limit="3"] … [/hub_loop]', __('A content type, only with this tag', 'hub-client')],
 			['[hub_loop placement="{P}" tag="{G}"] … [/hub_loop]', __('A placement, only blocks with this tag (in their Order)', 'hub-client')],
 			['[hub_loop tag="{G},other-tag"] … [/hub_loop]', __('Any of several tags; tag="a+b" = must have all of them', 'hub-client')],
+			['[hub placement="{P}" field="data.weight"]', __('A value written in the hub content as a line "@weight: 123"', 'hub-client')],
 			['[hub field="tags"]', __('The item\'s tags, comma-separated', 'hub-client')],
 			['[hub_map type="{E}" upcoming="1" height="320"]', __('Embedded map with directions link (OpenStreetMap; provider="google" for Google)', 'hub-client')],
 		];
@@ -96,6 +98,7 @@ class HC_Cheatsheet {
 			'location' => __('location / address', 'hub-client'), 'map_url' => __('directions link', 'hub-client'),
 			'map_lat' => __('latitude', 'hub-client'), 'map_lng' => __('longitude', 'hub-client'), 'stream_url' => __('live stream link', 'hub-client'),
 			'tags' => __('tags, comma-separated', 'hub-client'),
+			'data.name' => __('value of a line "@name: value" in the hub content (e.g. data.weight)', 'hub-client'),
 			'seo_title' => __('SEO title', 'hub-client'), 'seo_description' => __('meta description', 'hub-client'),
 		];
 		$recipes = [

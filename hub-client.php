@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Hub Client
  * Description:       Hub content on this site: [hub] shortcodes and {hub:…} Bricks tags for page sections, plus local copies of hub articles with their own URLs, templates, SEO and sitemaps. Updated instantly by signed webhooks.
- * Version:           0.9.0
+ * Version:           0.10.0
  * Requires at least: 6.3
  * Requires PHP:      8.0
  * Author:            Tom
@@ -14,7 +14,7 @@
 
 defined('ABSPATH') || exit;
 
-define('HUB_CLIENT_VERSION', '0.9.0');
+define('HUB_CLIENT_VERSION', '0.10.0');
 define('HUB_CLIENT_DIR', plugin_dir_path(__FILE__));
 
 require_once HUB_CLIENT_DIR . 'includes/class-hc-ui.php';
