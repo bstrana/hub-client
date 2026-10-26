@@ -96,14 +96,14 @@ class HC_Sync {
 		if ($ids !== null) return $ids;
 		$mine = (string) hub_client_opt('site');
 		$ids = array_map('intval', get_posts([
-			'post_type' => self::post_type(), 'post_status' => 'publish', 'fields' => 'ids', 'numberposts' => -1, 'suppress_filters' => true,
+			'post_type' => self::post_types(), 'post_status' => 'publish', 'fields' => 'ids', 'numberposts' => -1, 'suppress_filters' => true,
 			'meta_query' => [['key' => 'hub_canonical_site', 'compare' => 'EXISTS'], ['key' => 'hub_canonical_site', 'value' => [$mine, ''], 'compare' => 'NOT IN']],
 		]));
 		return $ids;
 	}
 
 	public static function sitemap_core(array $args): array {
-		if (($args['post_type'] ?? '') === self::post_type() && ($ids = self::foreign_ids())) {
+		if (in_array($args['post_type'] ?? '', self::post_types(), true) && ($ids = self::foreign_ids())) {
 			$args['post__not_in'] = array_merge((array) ($args['post__not_in'] ?? []), $ids);
 		}
 		return $args;
@@ -115,17 +115,36 @@ class HC_Sync {
 
 	/* ---------------- Where copies live ---------------- */
 
+	/** The default home of copies ("Store as"). */
 	public static function post_type(): string {
 		return hub_client_opt('store_as') === 'hub_article' ? 'hub_article' : 'post';
 	}
 
-	public static function type_taxonomy(): string {
-		return self::post_type() === 'post' ? 'category' : 'hub_type';
+	/** Every post type that holds hub copies: the default one plus this site's own (HC_Types). */
+	public static function post_types(): array {
+		return array_values(array_unique(array_merge([self::post_type()], array_keys(HC_Types::all()))));
+	}
+
+	/** Where an item with these hub content types lives here. */
+	public static function type_for(array $content_types): string {
+		$map = HC_Types::map();
+		foreach ($content_types as $t) {
+			if (isset($map[$t]) && post_type_exists($map[$t])) return $map[$t];
+		}
+		return self::post_type();
+	}
+
+	public static function type_taxonomy(string $pt = ''): string {
+		return ($pt ?: self::post_type()) === 'post' ? 'category' : 'hub_type';
 	}
 
 	public static function register_types(): void {
-		if (hub_client_opt('store_as') !== 'hub_article') return;
 		$slug = sanitize_title((string) hub_client_opt('cpt_slug')) ?: 'novosti';
+		$own  = array_values(array_filter(array_keys(HC_Types::all()), 'post_type_exists'));
+		if (hub_client_opt('store_as') !== 'hub_article') {
+			if ($own) self::register_hub_taxonomies($own, 'hub');
+			return;
+		}
 		register_post_type('hub_article', [
 			'labels'       => ['name' => __('Hub articles', 'hub-client'), 'singular_name' => __('Hub article', 'hub-client')],
 			'public'       => true,
@@ -135,26 +154,89 @@ class HC_Sync {
 			'menu_icon'    => 'dashicons-rss',
 			'supports'     => ['title', 'editor', 'excerpt', 'thumbnail', 'custom-fields'],
 		]);
-		register_taxonomy('hub_type', ['hub_article'], [
+		self::register_hub_taxonomies(array_merge(['hub_article'], $own), $slug);
+	}
+
+	/** Content types and tags from the hub, shared by Hub articles and this site's own post types. */
+	private static function register_hub_taxonomies(array $post_types, string $base): void {
+		register_taxonomy('hub_type', $post_types, [
 			'labels'            => ['name' => __('Article types', 'hub-client'), 'singular_name' => __('Article type', 'hub-client')],
 			'public'            => true,
 			'hierarchical'      => true,
 			'show_in_rest'      => true,
 			'show_admin_column' => true,
-			'rewrite'           => ['slug' => $slug . '-type'],
+			'rewrite'           => ['slug' => $base . '-type'],
 		]);
-		register_taxonomy('hub_article_tag', ['hub_article'], [
+		register_taxonomy('hub_article_tag', $post_types, [
 			'labels'            => ['name' => __('Article tags', 'hub-client'), 'singular_name' => __('Article tag', 'hub-client')],
 			'public'            => true,
 			'hierarchical'      => false,
 			'show_in_rest'      => true,
 			'show_admin_column' => true,
-			'rewrite'           => ['slug' => $slug . '-tag'],
+			'rewrite'           => ['slug' => $base . '-tag'],
 		]);
 	}
 
-	public static function tag_taxonomy(): string {
-		return self::post_type() === 'post' ? 'post_tag' : 'hub_article_tag';
+	public static function tag_taxonomy(string $pt = ''): string {
+		return ($pt ?: self::post_type()) === 'post' ? 'post_tag' : 'hub_article_tag';
+	}
+
+	/**
+	 * Move copies to the post type their hub content types belong to now (after post types
+	 * were added, changed or removed here), taking their type and tag terms along.
+	 * @return int number of copies moved
+	 */
+	public static function rehome(): int {
+		global $wpdb;
+		$moved = 0;
+		$ids = $wpdb->get_col("SELECT p.ID FROM {$wpdb->posts} p JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_hub_id' WHERE p.post_type NOT IN ('revision', 'attachment')");
+		foreach ($ids as $id) {
+			$id  = (int) $id;
+			$old = (string) get_post_type($id);
+			$types = array_filter(explode(',', (string) get_post_meta($id, '_hub_types', true)));
+			if (!$types && taxonomy_exists(self::type_taxonomy($old))) {
+				$types = (array) wp_get_object_terms($id, self::type_taxonomy($old), ['fields' => 'slugs']);
+			}
+			$want = self::type_for($types);
+			if ($want === $old) continue;
+			// Terms by slug + name, read before the switch.
+			$tags = [];
+			if (taxonomy_exists(self::tag_taxonomy($old))) {
+				foreach ((array) wp_get_object_terms($id, self::tag_taxonomy($old)) as $t) $tags[$t->slug] = $t->name;
+				wp_set_object_terms($id, [], self::tag_taxonomy($old));
+			}
+			if (taxonomy_exists(self::type_taxonomy($old))) wp_set_object_terms($id, [], self::type_taxonomy($old));
+			set_post_type($id, $want);
+			self::set_terms($id, $want, $types, $tags);
+			$moved++;
+		}
+		if ($moved) {
+			self::log('post types', 0, sprintf('%d article(s) moved to their post type', $moved));
+			if (hub_client_opt('purge_cache')) self::purge_page_cache();
+		}
+		return $moved;
+	}
+
+	/** Content type terms + tag terms for a copy in post type $pt. */
+	private static function set_terms(int $id, string $pt, array $types, array $tags): void {
+		$tt = [];
+		foreach ($types as $slug) {
+			$slug = sanitize_title((string) $slug);
+			if ($slug === '') continue;
+			$t = term_exists($slug, self::type_taxonomy($pt));
+			if (!$t) $t = wp_insert_term(ucwords(str_replace('-', ' ', $slug)), self::type_taxonomy($pt), ['slug' => $slug]);
+			if (!is_wp_error($t)) $tt[] = (int) $t['term_id'];
+		}
+		if ($tt) wp_set_object_terms($id, $tt, self::type_taxonomy($pt), false);
+		$tag_ids = [];
+		foreach ($tags as $slug => $name) {
+			$slug = sanitize_title((string) $slug);
+			if ($slug === '') continue;
+			$t = term_exists($slug, self::tag_taxonomy($pt));
+			if (!$t) $t = wp_insert_term(sanitize_text_field((string) $name), self::tag_taxonomy($pt), ['slug' => $slug]);
+			if (!is_wp_error($t)) $tag_ids[] = (int) $t['term_id'];
+		}
+		wp_set_object_terms($id, $tag_ids, self::tag_taxonomy($pt), false);
 	}
 
 	public static function schedule(): void {
@@ -169,17 +251,16 @@ class HC_Sync {
 	/* ---------------- Lookup ---------------- */
 
 	public static function local_id(int $hub_id): int {
-		$q = [
-			'post_type'        => self::post_type(),
-			'post_status'      => ['publish', 'draft', 'pending', 'future', 'private', 'trash'],
-			'meta_key'         => '_hub_id',
-			'meta_value'       => $hub_id,
-			'fields'           => 'ids',
-			'numberposts'      => 1,
-			'suppress_filters' => true,
-		];
-		$ids = get_posts($q);
-		return $ids ? (int) $ids[0] : 0;
+		global $wpdb;
+		// By hub ID across every post type — also finds a copy whose post type was just
+		// removed here and that hasn't been moved back yet, so no duplicate is created.
+		$id = $wpdb->get_var($wpdb->prepare(
+			"SELECT p.ID FROM {$wpdb->posts} p JOIN {$wpdb->postmeta} m ON m.post_id = p.ID
+			 WHERE m.meta_key = '_hub_id' AND m.meta_value = %s AND p.post_type NOT IN ('revision', 'attachment')
+			 ORDER BY p.ID LIMIT 1",
+			(string) $hub_id
+		));
+		return (int) $id;
 	}
 
 	/** Should this item exist here as an article? */
@@ -187,6 +268,8 @@ class HC_Sync {
 		$site = (string) hub_client_opt('site');
 		if ($site !== '' && !in_array($site, (array) ($item['sites'] ?? []), true)) return false;
 		$types = hub_client_csv('types');
+		// Types that feed one of this site's post types are always kept.
+		if ($types) $types = array_merge($types, array_keys(HC_Types::map()));
 		if ($types && !array_intersect($types, (array) ($item['content_types'] ?? []))) return false;
 		$langs = hub_client_csv('langs');
 		if ($langs && !in_array($item['lang'] ?? '', $langs, true)) return false;
@@ -222,9 +305,16 @@ class HC_Sync {
 			return 'unchanged';
 		}
 
+		$pt  = self::type_for((array) ($item['content_types'] ?? []));
+		$old = $local ? (string) get_post_type($local) : '';
+		if ($local && $old !== $pt) {
+			// Moving to another post type: drop the old type's terms; the new ones are set below.
+			foreach ([self::type_taxonomy($old), self::tag_taxonomy($old)] as $tx) if (taxonomy_exists($tx)) wp_set_object_terms($local, [], $tx);
+			$force = true;
+		}
 		$date_gmt = !empty($item['date']) ? gmdate('Y-m-d H:i:s', strtotime($item['date'])) : current_time('mysql', true);
 		$postarr  = [
-			'post_type'     => self::post_type(),
+			'post_type'     => $pt,
 			'post_status'   => $status,
 			'post_title'    => (string) $item['title'],
 			'post_content'  => (string) ($item['html'] ?? ''),
@@ -251,6 +341,7 @@ class HC_Sync {
 
 		$meta = [
 			'_hub_id'            => $hub_id,
+			'_hub_types'         => implode(',', array_map('sanitize_title', (array) ($item['content_types'] ?? []))),
 			'_hub_group'         => (string) ($item['group'] ?? ''),
 			'_hub_lang'          => (string) ($item['lang'] ?? ''),
 			'_hub_modified'      => (string) ($item['modified'] ?? ''),
@@ -282,11 +373,11 @@ class HC_Sync {
 		$terms = [];
 		foreach ((array) ($item['content_types'] ?? []) as $slug) {
 			$slug = sanitize_title($slug);
-			$t = term_exists($slug, self::type_taxonomy());
-			if (!$t) $t = wp_insert_term(ucwords(str_replace('-', ' ', $slug)), self::type_taxonomy(), ['slug' => $slug]);
+			$t = term_exists($slug, self::type_taxonomy($pt));
+			if (!$t) $t = wp_insert_term(ucwords(str_replace('-', ' ', $slug)), self::type_taxonomy($pt), ['slug' => $slug]);
 			if (!is_wp_error($t)) $terms[] = (int) $t['term_id'];
 		}
-		if ($terms) wp_set_object_terms($id, $terms, self::type_taxonomy(), false);
+		if ($terms) wp_set_object_terms($id, $terms, self::type_taxonomy($pt), false);
 
 		// Hub tags → post tags (or Article tags), same slug, so Bricks tag archives and queries work.
 		$tag_ids = [];
@@ -294,11 +385,11 @@ class HC_Sync {
 		foreach (array_values((array) ($item['tags'] ?? [])) as $i => $slug) {
 			$slug = sanitize_title((string) $slug);
 			if ($slug === '') continue;
-			$t = term_exists($slug, self::tag_taxonomy());
-			if (!$t) $t = wp_insert_term(sanitize_text_field((string) ($names[$i] ?? $slug)), self::tag_taxonomy(), ['slug' => $slug]);
+			$t = term_exists($slug, self::tag_taxonomy($pt));
+			if (!$t) $t = wp_insert_term(sanitize_text_field((string) ($names[$i] ?? $slug)), self::tag_taxonomy($pt), ['slug' => $slug]);
 			if (!is_wp_error($t)) $tag_ids[] = (int) $t['term_id'];
 		}
-		wp_set_object_terms($id, $tag_ids, self::tag_taxonomy(), false);
+		wp_set_object_terms($id, $tag_ids, self::tag_taxonomy($pt), false);
 
 		self::sync_image($id, $item['image'] ?? null);
 		self::link_language($id, $item);
@@ -422,7 +513,7 @@ class HC_Sync {
 		$group = (string) ($item['group'] ?? '');
 		if ($group === '') return;
 		$siblings = get_posts([
-			'post_type' => self::post_type(), 'post_status' => 'any', 'meta_key' => '_hub_group', 'meta_value' => $group,
+			'post_type' => self::post_types(), 'post_status' => 'any', 'meta_key' => '_hub_group', 'meta_value' => $group,
 			'fields' => 'ids', 'numberposts' => 20, 'lang' => '', 'suppress_filters' => true,
 		]);
 		$map = [];
@@ -481,7 +572,7 @@ class HC_Sync {
 		if (is_wp_error($ids)) return $ids;
 		$live  = array_map('intval', (array) $ids['data']);
 		$local = get_posts([
-			'post_type' => self::post_type(), 'post_status' => ['publish', 'draft', 'pending', 'future', 'private'],
+			'post_type' => self::post_types(), 'post_status' => ['publish', 'draft', 'pending', 'future', 'private'],
 			'meta_key' => '_hub_id', 'fields' => 'ids', 'numberposts' => -1, 'suppress_filters' => true,
 		]);
 		foreach ($local as $lid) {
@@ -502,7 +593,7 @@ class HC_Sync {
 	public static function apply_windows(): int {
 		$changed = 0;
 		$ids = get_posts([
-			'post_type' => self::post_type(), 'post_status' => ['publish', 'draft'], 'fields' => 'ids', 'numberposts' => -1,
+			'post_type' => self::post_types(), 'post_status' => ['publish', 'draft'], 'fields' => 'ids', 'numberposts' => -1,
 			'suppress_filters' => true,
 			'meta_query' => ['relation' => 'OR', ['key' => '_hub_show_from', 'compare' => 'EXISTS'], ['key' => '_hub_show_until', 'compare' => 'EXISTS']],
 		]);

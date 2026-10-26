@@ -87,7 +87,7 @@ class HC_Admin {
 			'store_as' => 'post', 'cpt_slug' => 'novosti', 'author' => 0, 'editor_fetch' => 1, 'nightly' => 0, 'purge_cache' => 1, 'copy_images' => 1, 'rev_copies' => 0, 'rev_other' => '', 'lang_mode' => 'visitor',
 		]);
 		$n = fn($k) => esc_attr("hub_client[$k]");
-		$count = (int) (new WP_Query(['post_type' => HC_Sync::post_type(), 'post_status' => 'any', 'meta_key' => '_hub_id', 'fields' => 'ids', 'posts_per_page' => 1, 'suppress_filters' => true]))->found_posts;
+		$count = (int) (new WP_Query(['post_type' => HC_Sync::post_types(), 'post_status' => 'any', 'meta_key' => '_hub_id', 'fields' => 'ids', 'posts_per_page' => 1, 'suppress_filters' => true]))->found_posts;
 		$last  = (int) get_option('hub_client_last_sync', 0);
 		$bs    = HC_Blocks::stats();
 		$log   = array_reverse((array) get_option(HC_Sync::LOG, []));
@@ -111,6 +111,7 @@ class HC_Admin {
 			'overview'  => [__('Overview', 'hub-client'), 'dashboard'],
 			'connect'   => [__('Connection', 'hub-client'), 'admin-links'],
 			'articles'  => [__('Articles', 'hub-client'), 'media-document'],
+			'types'     => [__('Post types', 'hub-client'), 'database-add', count(HC_Types::all()) ?: null],
 			'sections'  => [__('Sections & speed', 'hub-client'), 'performance'],
 			'languages' => [__('Languages', 'hub-client'), 'translation'],
 			'revisions' => [__('Revisions', 'hub-client'), 'backup'],
@@ -230,6 +231,11 @@ class HC_Admin {
 			<?php submit_button(); ?>
 			<?php HC_UI::panel_close(); ?>
 		</form>
+
+		<?php HC_UI::panel_open('types'); ?>
+			<?php settings_errors(HC_Types::OPTION); ?>
+			<?php HC_Types::render_tab(); ?>
+		<?php HC_UI::panel_close(); ?>
 
 		<?php HC_UI::panel_open('activity'); ?>
 		<?php HC_UI::card_open(__('Recent activity', 'hub-client'), __('Webhooks, refreshes and errors — the last 20.', 'hub-client'), 'list-view', true); ?>
