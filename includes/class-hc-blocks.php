@@ -493,8 +493,19 @@ class HC_Blocks {
 			. esc_html("Hub {$what}: {$why}") . ' <small>(only admins see this)</small></span>';
 	}
 
+	/** "title" → "title"; "data.Weight" / "html.weight" → "data.weight" (values from "@name:" lines). */
+	public static function field_key(string $f): string {
+		$f = strtolower(trim($f));
+		if (preg_match('/^(?:data|html)\.([a-z][a-z0-9_-]{0,40})$/', $f, $m)) return 'data.' . str_replace('-', '_', $m[1]);
+		return sanitize_key($f);
+	}
+
 	/** One field of one item, ready to print. */
 	public static function value(array $item, string $field, array $a = []): string {
+		if (str_starts_with($field, 'data.')) {
+			$data = (array) ($item['data'] ?? []);
+			return esc_html((string) ($data[substr($field, 5)] ?? ''));
+		}
 		switch ($field) {
 			case 'title':
 			case 'subtitle':
@@ -583,7 +594,7 @@ class HC_Blocks {
 	public static function sc_field($atts): string {
 		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'field' => 'title', 'index' => 1, 'lang' => '', 'upcoming' => '', 'format' => '', 'default' => ''], $atts, 'hub');
 		$item = self::pick($a);
-		$out  = $item ? self::value($item, sanitize_key($a['field']), array_filter(['format' => $a['format']])) : '';
+		$out  = $item ? self::value($item, self::field_key($a['field']), array_filter(['format' => $a['format']])) : '';
 		if ($out !== '') return $out;
 		if ($a['default'] !== '') return esc_html($a['default']);
 		// An item without this field (e.g. no button) is normal; a missing item is worth a hint.
@@ -644,8 +655,8 @@ class HC_Blocks {
 		[$href_field, $text_field, $fallback] = $targets[$a['to']] ?? $targets['cta'];
 		$href = self::value($item, $href_field);
 		if ($href === '') return '';
-		if ($a['text'] !== '' && in_array($a['text'], self::FIELDS, true)) {
-			$label = self::value($item, $a['text']);
+		if ($a['text'] !== '' && (in_array($a['text'], self::FIELDS, true) || str_starts_with(self::field_key($a['text']), 'data.'))) {
+			$label = self::value($item, self::field_key($a['text']));
 		} elseif ($a['text'] !== '') {
 			$label = esc_html($a['text']);
 		} else {
@@ -827,7 +838,7 @@ class HC_Blocks {
 			return $url !== '' ? [$url] : [];
 		}
 		if ($context === 'link' && $field === 'title') $field = 'link';
-		return self::value($item, sanitize_key($field));
+		return self::value($item, self::field_key($field));
 	}
 
 	public static function bricks_tag($tag, $post = null, $context = 'text') {
@@ -838,7 +849,7 @@ class HC_Blocks {
 
 	public static function bricks_content($content, $post = null, $context = 'text') {
 		if (!is_string($content) || !str_contains($content, '{hub:')) return $content;
-		return preg_replace_callback('/\{(hub:[a-z0-9_.\-]+:[a-z][a-z0-9_]*(?::\d+)?(?::[a-z]{2,3})?)\}/i', function ($m) {
+		return preg_replace_callback('/\{(hub:[a-z0-9_.\-]+:[a-z][a-z0-9_.\-]*(?::\d+)?(?::[a-z]{2,3})?)\}/i', function ($m) {
 			$v = self::resolve($m[1], 'text');
 			return is_string($v) ? $v : '';
 		}, $content);

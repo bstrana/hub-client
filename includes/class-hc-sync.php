@@ -369,6 +369,19 @@ class HC_Sync {
 			($v === '' || $v === 0) ? delete_post_meta($id, $k) : update_post_meta($id, $k, $v);
 		}
 
+		// "@name: value" lines from the hub content → custom fields hub_data_<name> ({cf_hub_data_weight}).
+		$data = (array) ($item['data'] ?? []);
+		$old  = array_filter(explode(',', (string) get_post_meta($id, '_hub_data_keys', true)));
+		$keys = [];
+		foreach ($data as $k => $v) {
+			$k = sanitize_key((string) $k);
+			if ($k === '') continue;
+			update_post_meta($id, 'hub_data_' . $k, sanitize_text_field((string) $v));
+			$keys[] = $k;
+		}
+		foreach (array_diff($old, $keys) as $gone) delete_post_meta($id, 'hub_data_' . $gone);
+		$keys ? update_post_meta($id, '_hub_data_keys', implode(',', $keys)) : delete_post_meta($id, '_hub_data_keys');
+
 		// Hub content types → categories (post) or Article types (CPT).
 		$terms = [];
 		foreach ((array) ($item['content_types'] ?? []) as $slug) {

@@ -53,9 +53,22 @@ The tag format:
 | `[hub_loop placement="home-blocks" limit="6" wrap="div" class="grid"] … [/hub_loop]` | repeats its content for each item; inside, use the shortcodes without a placement |
 | `[hub_loop type="news" limit="3" empty="Nema novosti"] … [/hub_loop]` | latest news; `empty` = text when there are none |
 
-**Fields:** `title`, `subtitle`, `badge`, `excerpt`, `html` (the content, with its markup), `image` (URL), `image_full`, `image_alt`, `image_focus`, `cta_url`, `cta_label`, `cta2_url`, `cta2_label`, `date` (add `format="j.n.Y."`), `slug`, `id`, `lang`, `content_type`, and `link` — the URL of this site's copy of the article (empty if it isn't kept as an article).
+**Fields:** `data.<name>` (see Data from the content), `title`, `subtitle`, `badge`, `excerpt`, `html` (the content, with its markup), `image` (URL), `image_full`, `image_alt`, `image_focus`, `cta_url`, `cta_label`, `cta2_url`, `cta2_label`, `date` (add `format="j.n.Y."`), `slug`, `id`, `lang`, `content_type`, and `link` — the URL of this site's copy of the article (empty if it isn't kept as an article).
 
 **Event fields:** `event_start`, `event_end` (date + time; `format="…"` works), `event_date`, `event_time`, `location`, `map_url` (directions link), `map_lat`, `map_lng`, `stream_url`. Also `seo_title`, `seo_description`.
+
+### Data from the content
+
+On the hub, write lines like `@weight: 84` or `@price-month: 30 €` in a block's content. Here:
+
+| | |
+|---|---|
+| `[hub placement="players" field="data.weight"]` | `84` (`html.weight` works too) |
+| `{hub:players:data.weight}` | the same in Bricks |
+| `[hub_link text="data.price_month"]` | as link text |
+| `{cf_hub_data_weight}` | on article copies (custom field `hub_data_<name>`) |
+
+`-` in a name becomes `_` (`@price-month` → `data.price_month`). The lines themselves don't show in the content.
 
 ### Tags
 
