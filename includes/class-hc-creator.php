@@ -20,6 +20,7 @@ class HC_Creator {
 			'events' => ['calendar', __('Upcoming events', 'hub-client'), __('List of events that haven\'t ended', 'hub-client')],
 			'logos'  => ['awards', __('Logo row', 'hub-client'), __('Partners or sponsors with links', 'hub-client')],
 			'faq'    => ['editor-help', __('FAQ', 'hub-client'), __('Questions that open and close', 'hub-client')],
+			'cpt'    => ['database', __('Post type list', 'hub-client'), __('Bricks query loop over a post type, with each item\'s data points', 'hub-client')],
 		];
 		?>
 		<div class="hubc-wrap">
@@ -32,8 +33,8 @@ class HC_Creator {
 					<?php endforeach; ?>
 				</div>
 
-				<h2 style="margin-top:14px"><span class="dashicons dashicons-database" aria-hidden="true"></span><?php esc_html_e('2. Content from', 'hub-client'); ?></h2>
-				<div class="hubc-row">
+				<h2 class="hubc-not-cpt" style="margin-top:14px"><span class="dashicons dashicons-database" aria-hidden="true"></span><?php esc_html_e('2. Content from', 'hub-client'); ?></h2>
+				<div class="hubc-row hubc-not-cpt">
 					<label><input type="radio" name="hubc_source" value="placement" checked> <?php esc_html_e('Placement', 'hub-client'); ?></label>
 					<label><input type="radio" name="hubc_source" value="type"> <?php esc_html_e('Content type (newest)', 'hub-client'); ?></label>
 					<label><input type="radio" name="hubc_source" value="tag"> <?php esc_html_e('Tag (newest)', 'hub-client'); ?></label>
@@ -44,9 +45,17 @@ class HC_Creator {
 				<h2 style="margin-top:14px"><span class="dashicons dashicons-admin-appearance" aria-hidden="true"></span><?php esc_html_e('3. Options', 'hub-client'); ?></h2>
 				<div class="hubc-row">
 					<label><?php esc_html_e('Section title', 'hub-client'); ?> <input type="text" id="hubc_title" class="regular-text" style="width:16em" placeholder="<?php esc_attr_e('optional', 'hub-client'); ?>"></label>
-					<label><?php esc_html_e('Items', 'hub-client'); ?> <input type="number" id="hubc_count" min="1" max="12" value="3" class="small-text"></label>
+					<label class="hubc-not-cpt"><?php esc_html_e('Items', 'hub-client'); ?> <input type="number" id="hubc_count" min="1" max="12" value="3" class="small-text"></label>
 					<label><?php esc_html_e('Columns', 'hub-client'); ?> <input type="number" id="hubc_cols" min="1" max="6" value="3" class="small-text"></label>
-					<label><?php esc_html_e('Button text', 'hub-client'); ?> <input type="text" id="hubc_more" value="<?php esc_attr_e('Read more', 'hub-client'); ?>" style="width:9em"></label>
+					<label class="hubc-not-cpt"><?php esc_html_e('Button text', 'hub-client'); ?> <input type="text" id="hubc_more" value="<?php esc_attr_e('Read more', 'hub-client'); ?>" style="width:9em"></label>
+				</div>
+				<div class="hubc-row hubc-cpt-only" hidden>
+					<?php $cpts = array_merge(array_map(fn($d) => $d['plural'], HC_Types::all()), [HC_Sync::post_type() => HC_Sync::post_type() === 'post' ? __('Posts', 'hub-client') : __('Hub articles', 'hub-client')]); ?>
+					<label><?php esc_html_e('Post type', 'hub-client'); ?> <select id="hubc_cpt"><?php foreach ($cpts as $k => $l) printf('<option value="%s">%s</option>', esc_attr($k), esc_html("$l ($k)")); ?></select></label>
+					<label><?php esc_html_e('Layout', 'hub-client'); ?> <select id="hubc_layout"><option value="rows"><?php esc_html_e('Rows (name, data underneath)', 'hub-client'); ?></option><option value="cards"><?php esc_html_e('Cards', 'hub-client'); ?></option><option value="table"><?php esc_html_e('Table-like rows', 'hub-client'); ?></option></select></label>
+					<label><?php esc_html_e('Data to show', 'hub-client'); ?> <input type="text" id="hubc_keys" placeholder="<?php esc_attr_e('all — or e.g. position,height,weight', 'hub-client'); ?>" style="width:16em"></label>
+					<label><?php esc_html_e('Labels', 'hub-client'); ?> <input type="text" id="hubc_labels" placeholder="height:Visina,weight:Težina" style="width:16em"></label>
+					<label><?php esc_html_e('Order by', 'hub-client'); ?> <select id="hubc_orderby"><option value="title">title</option><option value="date">date</option><option value="menu_order">menu_order</option></select></label>
 				</div>
 				<div class="hubc-row">
 					<label><input type="radio" name="hubc_theme" value="light" checked> <?php esc_html_e('Light', 'hub-client'); ?></label>
@@ -80,6 +89,7 @@ class HC_Creator {
 			.hubc-pattern small{color:#646970}
 			.hubc-pattern:has(input:checked){border-color:#3858e9;box-shadow:0 0 0 2px #3858e9 inset;background:#eef1fd}
 			.hubc-row{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin:6px 0}
+			[hidden].hubc-row,.hubc-wrap [hidden],#hubc_msg[hidden]{display:none!important}
 			.hubc-preview{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:12px 0}
 			.hubc-preview ul{margin:6px 0 0;font-family:Menlo,Consolas,monospace;font-size:12px}
 			.hubc-preview li{margin:2px 0}
@@ -104,6 +114,7 @@ class HC_Creator {
 				var source  = val('hubc_source');
 				// Some patterns only make sense with one source.
 				if (pattern === 'event' || pattern === 'events') source = 'next';
+				if (pattern === 'cpt') source = 'cpt';
 				var P = pick('P', 'home-hero'), T = pick('T', 'article'), E = pick('E', 'event'), G = pick('G', 'my-tag'), L = pick('L', '');
 				var lang  = $('#hubc_lang').checked ? L : '';
 				var count = Math.max(1, Math.min(12, parseInt($('#hubc_count').value, 10) || 3));
@@ -151,7 +162,7 @@ class HC_Creator {
 				function button(parent, text, link, primary) {
 					return el('button', parent, {
 						text: text,
-						link: { type: 'meta', useDynamicData: link },
+						link: { type: 'meta', url: '#', useDynamicData: link },
 						_padding: pad(12, 22, 12, 22),
 						_border: Object.assign({ width: pad(2, 2, 2, 2), style: 'solid', color: { hex: accent } }, radius(8)),
 						_background: primary ? { color: { hex: accent } } : { color: { raw: 'rgba(0,0,0,0)' } },
@@ -234,6 +245,35 @@ class HC_Creator {
 					maybeTitle(c8);
 					sc = '<style>.hub-faq-list details{border-bottom:1px solid ' + C.border + ';padding:14px 0;color:' + C.text + '}.hub-faq-list summary{cursor:pointer;font-weight:600;font-size:18px;list-style:none;display:flex;justify-content:space-between;gap:12px}.hub-faq-list summary::after{content:"+";color:' + accent + ';font-size:22px;line-height:1}.hub-faq-list details[open] summary::after{content:"–"}.hub-faq-list .a{padding-top:10px;color:' + C.muted + '}</style>\n[hub_loop ' + scSrc + ' limit="' + Math.max(count, 10) + '" wrap="div" class="hub-faq-list"]\n  <details>\n    <summary>[hub field="title"]</summary>\n    <div class="a">[hub field="html"]</div>\n  </details>\n[/hub_loop]';
 					shortcode(c8, sc);
+				} else if (pattern === 'cpt') {
+					var cpt    = $('#hubc_cpt').value || 'post';
+					var layout = $('#hubc_layout').value;
+					var keys   = $('#hubc_keys').value.replace(/\s+/g, '');
+					var labels = $('#hubc_labels').value.trim();
+					var dataSc = '[hub_data' + (keys ? ' keys="' + keys + '"' : '') + (labels ? ' labels="' + labels.replace(/"/g, '') + '"' : '') + (layout === 'cards' ? ' wrap="dl"' : ' wrap="div" class="hub-data hub-data-row"') + ']';
+					var css = '<style>.hub-data{margin:0;color:' + C.muted + ';font-size:14px}.hub-data dt{font-weight:600;color:' + C.text + '}.hub-data dd{margin:0 0 6px}'
+						+ '.hub-data-row{display:flex;flex-wrap:wrap;gap:6px 18px}.hub-data-row .hub-data-label{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:' + C.muted + '}.hub-data-row .hub-data-value{font-weight:600;color:' + C.text + '}'
+						+ (layout === 'table' ? '.hub-ptl-row .hub-data-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}' : '') + '</style>';
+					var c9 = section('hub-ptl', 'Hub ' + cpt + ' list');
+					maybeTitle(c9);
+					shortcode(c9, css);
+					var list = el('block', c9, layout === 'cards'
+						? { _display: 'grid', _gridTemplateColumns: 'repeat(' + cols + ', 1fr)', '_gridTemplateColumns:tablet_portrait': 'repeat(' + Math.min(cols, 2) + ', 1fr)', '_gridTemplateColumns:mobile_portrait': '1fr', _gridGap: '24' }
+						: { _rowGap: '12' });
+					var query = { objectType: 'post', post_type: [cpt], posts_per_page: '-1', orderby: $('#hubc_orderby').value, order: $('#hubc_orderby').value === 'date' ? 'DESC' : 'ASC' };
+					var item = el('block', list, Object.assign({
+						hasLoop: true, query: query,
+						_padding: pad(16, 18, 16, 18), _background: { color: { hex: C.card } },
+						_border: Object.assign({ width: pad(1, 1, 1, 1), style: 'solid', color: { hex: C.border } }, radius(12)),
+						_hidden: cls('hub-ptl-row')
+					}, layout === 'cards' ? { _rowGap: '10' } : { _direction: 'row', _columnGap: '18', _rowGap: '12', _alignItems: 'center', '_direction:mobile_portrait': 'column', '_alignItems:mobile_portrait': 'flex-start' }), 'Loop: ' + cpt);
+					el('image', item, layout === 'cards'
+						? { image: { useDynamicData: '{featured_image}', size: 'large' }, _width: '100%', _aspectRatio: '4/3', _objectFit: 'cover', _border: radius(10) }
+						: { image: { useDynamicData: '{featured_image}', size: 'thumbnail' }, _width: '72', _height: '72', _objectFit: 'cover', _border: radius(999), _flexShrink: '0' });
+					var body = el('block', item, { _rowGap: '6', _flexGrow: '1' });
+					el('heading', body, { text: '{post_title}', tag: 'h3', link: { type: 'meta', url: '#', useDynamicData: '{post_url}' }, _typography: typo(19, 700, C.text) });
+					shortcode(body, dataSc);
+					sc = css + '\n<!-- In Bricks this is a native query loop over "' + cpt + '"; elsewhere loop over the posts and put this inside each item: -->\n' + dataSc;
 				}
 
 				var data = { content: els, source: 'bricksCopiedElements', sourceUrl: siteUrl, version: bricksVersion, globalClasses: [], globalElements: [] };
@@ -260,9 +300,11 @@ class HC_Creator {
 				$('#hubc_json').value = JSON.stringify(current.data, null, 2);
 				document.querySelectorAll('input[name="hubc_source"]').forEach(function (r) {
 					var fixed = current.pattern === 'event' || current.pattern === 'events';
-					r.disabled = fixed && r.value !== 'next';
+					r.disabled = (fixed && r.value !== 'next') || current.pattern === 'cpt';
 					if (fixed && r.value === 'next') r.checked = true;
 				});
+				document.querySelectorAll('.hubc-cpt-only').forEach(function (e) { e.hidden = current.pattern !== 'cpt'; });
+				document.querySelectorAll('.hubc-not-cpt').forEach(function (e) { e.hidden = current.pattern === 'cpt'; });
 			}
 			function copyText(text, msg) {
 				var ok = function () { var m = $('#hubc_msg'); m.textContent = msg; m.hidden = false; setTimeout(function () { m.hidden = true; }, 2500); };
@@ -272,7 +314,7 @@ class HC_Creator {
 			function fallback(text) { var t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } catch (e) {} t.remove(); }
 
 			document.addEventListener('DOMContentLoaded', function () {
-				document.querySelectorAll('.hubc-wrap input').forEach(function (i) { i.addEventListener('input', update); i.addEventListener('change', update); });
+				document.querySelectorAll('.hubc-wrap input, .hubc-wrap select').forEach(function (i) { i.addEventListener('input', update); i.addEventListener('change', update); });
 				document.addEventListener('hub-picks', update);
 				document.querySelectorAll('.hub-pick select').forEach(function (s) { s.addEventListener('change', update); });
 				$('#hubc_copy').addEventListener('click', function () { update(); copyText(JSON.stringify(current.data), <?php echo wp_json_encode(__('Copied — now paste in Bricks (Ctrl/Cmd+V)', 'hub-client')); ?>); });

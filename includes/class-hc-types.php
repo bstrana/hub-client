@@ -184,7 +184,7 @@ class HC_Types {
 			<?php submit_button(__('Save post types', 'hub-client')); ?>
 		</form>
 		<?php if ($all) : ?>
-			<?php HC_UI::card_open(__('In Bricks', 'hub-client'), __('Each post type works like any other: make a Single template and an Archive template with the condition “Post type → …”, and use it in query loops. All hub fields are custom fields: {cf_hub_subtitle}, {cf_hub_event_start}, {cf_hub_location} …', 'hub-client'), 'layout'); ?>
+			<?php HC_UI::card_open(__('In Bricks', 'hub-client'), __('Each post type works like any other: make a Single template and an Archive template with the condition “Post type → …”, and use it in query loops. All hub fields are custom fields: {cf_hub_subtitle}, {cf_hub_event_start}, {cf_hub_location}, {cf_hub_data_weight} … For all of an item\'s data points at once, put [hub_data] in a Shortcode element inside the loop — or let the Element creator (Post type list) build the whole list.', 'hub-client'), 'layout'); ?>
 				<table class="hubui-table"><thead><tr><th><?php esc_html_e('Post type', 'hub-client'); ?></th><th><?php esc_html_e('From the hub', 'hub-client'); ?></th><th><?php esc_html_e('Posts', 'hub-client'); ?></th><th><?php esc_html_e('Archive', 'hub-client'); ?></th></tr></thead><tbody>
 				<?php foreach ($all as $key => $d) :
 					$n = post_type_exists($key) ? (int) array_sum((array) wp_count_posts($key)) : 0; ?>

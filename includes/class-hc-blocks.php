@@ -39,6 +39,7 @@ class HC_Blocks {
 		add_shortcode('hub_link', [__CLASS__, 'sc_link']);
 		add_shortcode('hub_map', [__CLASS__, 'sc_map']);
 		add_shortcode('hub_lang_switch', [__CLASS__, 'sc_lang_switch']);
+		add_shortcode('hub_data', [__CLASS__, 'sc_data']);
 		add_action('init', [__CLASS__, 'visitor_lang_request']);
 		add_action('template_redirect', [__CLASS__, 'maybe_nocache']);
 		// WP Rocket: separate cache files per selected language.
@@ -699,6 +700,83 @@ class HC_Blocks {
 		}
 		if ($out === '') return '';
 		return '<div class="' . esc_attr($a['class']) . '">' . $out . '</div>';
+	}
+
+	/**
+	 * All (or some) "@name: value" data points of one item, as a list.
+	 *
+	 * Which item: inside [hub_loop] the current one; with placement / type / tag the picked one;
+	 * otherwise the current post — e.g. each player in a Bricks query loop over a hub post type.
+	 *
+	 *   [hub_data]                                     every data point, as <dl>
+	 *   [hub_data keys="position,height,weight"]       only these, in this order
+	 *   [hub_data exclude="internal_note"]             all but these
+	 *   [hub_data labels="height:Visina,weight:Težina" wrap="table"]
+	 *   [hub_data key="weight"]                        one value, nothing around it
+	 *   [hub_data wrap="div" class="stats"]<span class="s"><b>{label}</b> {value}</span>[/hub_data]
+	 *
+	 * wrap: dl (default) | ul | table | div | none. Labels default to the name ("price_month" → "Price month").
+	 */
+	public static function sc_data($atts, $content = ''): string {
+		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '',
+			'key' => '', 'keys' => '', 'exclude' => '', 'labels' => '', 'wrap' => 'dl', 'class' => 'hub-data', 'empty' => '', 'show_empty' => ''], $atts, 'hub_data');
+		$data = self::data_for($a);
+
+		$norm = fn($k) => str_replace('-', '_', sanitize_key((string) $k));
+		if ($a['key'] !== '') return esc_html((string) ($data[$norm($a['key'])] ?? ''));
+
+		if ($a['keys'] !== '') {
+			$pick = [];
+			foreach (array_map($norm, explode(',', $a['keys'])) as $k) if ($k !== '' && array_key_exists($k, $data)) $pick[$k] = $data[$k];
+			$data = $pick;
+		}
+		foreach (array_map($norm, array_filter(explode(',', $a['exclude']))) as $k) unset($data[$k]);
+		if ($a['show_empty'] === '') $data = array_filter($data, fn($v) => trim((string) $v) !== '');
+		if (!$data) return $a['empty'] !== '' ? esc_html($a['empty']) : '';
+
+		$labels = [];
+		foreach (array_filter(array_map('trim', explode(',', $a['labels']))) as $pair) {
+			[$k, $l] = array_pad(explode(':', $pair, 2), 2, '');
+			if ($k !== '' && $l !== '') $labels[$norm($k)] = $l;
+		}
+		$label = fn($k) => $labels[$k] ?? ucfirst(str_replace('_', ' ', $k));
+
+		$wrap = in_array($a['wrap'], ['dl', 'ul', 'table', 'div', 'none'], true) ? $a['wrap'] : 'dl';
+		$rows = '';
+		foreach ($data as $k => $v) {
+			$L = esc_html($label($k)); $V = esc_html((string) $v); $K = esc_attr($k);
+			if (trim((string) $content) !== '') {
+				$rows .= str_replace(['{key}', '{label}', '{value}'], [$K, $L, $V], (string) $content);
+			} elseif ($wrap === 'table') {
+				$rows .= "<tr class=\"hub-data-$K\"><th>$L</th><td>$V</td></tr>";
+			} elseif ($wrap === 'ul') {
+				$rows .= "<li class=\"hub-data-$K\"><span class=\"hub-data-label\">$L</span> <span class=\"hub-data-value\">$V</span></li>";
+			} elseif ($wrap === 'dl') {
+				$rows .= "<dt class=\"hub-data-$K\">$L</dt><dd class=\"hub-data-$K\">$V</dd>";
+			} else {
+				$rows .= "<span class=\"hub-data-item hub-data-$K\"><span class=\"hub-data-label\">$L</span> <span class=\"hub-data-value\">$V</span></span> ";
+			}
+		}
+		if ($wrap === 'none') return $rows;
+		$tag = $wrap === 'table' ? 'table' : $wrap;
+		$inner = $wrap === 'table' ? "<tbody>$rows</tbody>" : $rows;
+		return '<' . $tag . ' class="' . esc_attr($a['class']) . '">' . $inner . '</' . $tag . '>';
+	}
+
+	/** The data points for [hub_data]: loop item, picked item, or the current post's copy. */
+	private static function data_for(array $a): array {
+		$has_source = $a['placement'] !== '' || $a['type'] !== '' || $a['tag'] !== '';
+		if ($has_source || self::$stack) {
+			$item = self::pick($a);
+			return array_map('strval', (array) ($item['data'] ?? []));
+		}
+		$id = (int) get_the_ID();
+		if (!$id) return [];
+		$out = [];
+		foreach (array_filter(explode(',', (string) get_post_meta($id, '_hub_data_keys', true))) as $k) {
+			$out[$k] = (string) get_post_meta($id, 'hub_data_' . $k, true);
+		}
+		return $out;
 	}
 
 	public static function sc_loop($atts, $content = ''): string {
