@@ -81,6 +81,10 @@ class HC_Cheatsheet {
 			['[hub_loop placement="{P}" tag="{G}"] … [/hub_loop]', __('A placement, only blocks with this tag (in their Order)', 'hub-client')],
 			['[hub_loop tag="{G},other-tag"] … [/hub_loop]', __('Any of several tags; tag="a+b" = must have all of them', 'hub-client')],
 			['[hub placement="{P}" field="data.weight"]', __('A value written in the hub content as a line "@weight: 123"', 'hub-client')],
+			['[hub_data]', __('All data points of the item as a list — in a Bricks query loop over a hub post type, of the current post', 'hub-client')],
+			['[hub_data keys="position,height,weight" labels="height:Visina,weight:Težina" wrap="table"]', __('Some, in this order, with your own labels (wrap: dl, ul, table, div, none)', 'hub-client')],
+			['[hub_data wrap="div"]<span><b>{label}</b> {value}</span>[/hub_data]', __('Your own markup per data point: {key} {label} {value}', 'hub-client')],
+			['[hub_loop placement="{P}"]<h3>[hub field="title"]</h3>[hub_data][/hub_loop]', __('Each item with its data points underneath', 'hub-client')],
 			['[hub field="tags"]', __('The item\'s tags, comma-separated', 'hub-client')],
 			['[hub_map type="{E}" upcoming="1" height="320"]', __('Embedded map with directions link (OpenStreetMap; provider="google" for Google)', 'hub-client')],
 		];

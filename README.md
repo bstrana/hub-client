@@ -70,6 +70,35 @@ On the hub, write lines like `@weight: 84` or `@price-month: 30 €` in a block'
 
 `-` in a name becomes `_` (`@price-month` → `data.price_month`). The lines themselves don't show in the content.
 
+#### All (or some) data points at once: `[hub_data]`
+
+Shows a block's data as a list — every value, or the ones you name, in your order:
+
+| | |
+|---|---|
+| `[hub_data]` | all values, as `<dl>` (label + value), in the order they're written on the hub |
+| `[hub_data keys="position,height,weight"]` | only these, in this order (`exclude="note"` for the opposite) |
+| `[hub_data labels="height:Visina,weight:Težina"]` | own labels (default: the name, `price_month` → "Price month") |
+| `[hub_data wrap="table"]` | `dl` (default), `ul`, `table`, `div` (spans), `none` |
+| `[hub_data key="height"]` | just one value |
+| `[hub_data keys="number,weight"]<b>{label}</b> {value}[/hub_data]` | your own markup per value (`{key}` too) |
+
+Empty values are skipped (`show_empty="1"` keeps them), `empty="…"` is shown when there's nothing. Every item has a class `hub-data-<name>` for styling.
+
+**Which block?** Inside a post loop (Bricks query loop, a theme loop, a single post template) it's the current post — a player, an article copy. Inside `[hub_loop]` it's the current item. Otherwise give a source like `[hub]`: `placement=`, `type=`, `tag=`, `index=`.
+
+**A list of players, each with a row of data points:** create a *Players* post type fed by the hub type `player` (Settings → Hub client → Post types), then in Bricks:
+
+```
+Section
+└─ Block  ← Query loop: Post type "Players", posts per page -1, order by title
+   ├─ Image      {featured_image}
+   ├─ Heading    {post_title}  (link {post_url})
+   └─ Shortcode  [hub_data keys="position,number,height,weight" wrap="div"]
+```
+
+The **Element creator → Post type list** pattern builds exactly this (rows, cards or table-like rows). Without Bricks: `[hub_loop type="player"]<h3>[hub field="title"]</h3>[hub_data][/hub_loop]`. A single value in Bricks: `{cf_hub_data_weight}`.
+
 ### Tags
 
 | Shortcode / tag | Output |
@@ -138,9 +167,9 @@ Polylang isn't required for this. You need it only for: text that isn't from the
 
 ### Element creator (paste into Bricks)
 
-**Settings → Hub shortcodes → Element creator**: pick a pattern — Hero, Cards (fixed number), Cards (any number), Text block, Next event, Upcoming events, Logo row, FAQ — and where the content comes from (placement, content type, tag or upcoming events, chosen with the pickers at the top). Set a section title, number of items, columns, light/dark and an accent colour, then **Copy for Bricks** and paste in the builder (Ctrl/Cmd+V or right-click → Paste).
+**Settings → Hub shortcodes → Element creator**: pick a pattern — Hero, Cards (fixed number), Cards (any number), Text block, Next event, Upcoming events, Logo row, FAQ, Post type list — and where the content comes from (placement, content type, tag or upcoming events, chosen with the pickers at the top). Set a section title, number of items, columns, light/dark and an accent colour, then **Copy for Bricks** and paste in the builder (Ctrl/Cmd+V or right-click → Paste).
 
-The section arrives as native Bricks elements (section, container, blocks, heading, text, image, buttons) using `{hub:…}` tags, so you style and edit it in Bricks as usual. Lists of any length, maps and FAQs use a Shortcode element with `[hub_loop]` / `[hub_map]`. **Copy as shortcode** gives the same thing for other builders.
+The section arrives as native Bricks elements (section, container, blocks, heading, text, image, buttons) using `{hub:…}` tags, so you style and edit it in Bricks as usual. Lists of any length, maps and FAQs use a Shortcode element with `[hub_loop]` / `[hub_map]`. **Post type list** is a native Bricks query loop over one of this site's post types (e.g. Players) with each post's data points from `[hub_data]`. **Copy as shortcode** gives the same thing for other builders.
 
 ### Cheat sheet
 
