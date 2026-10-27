@@ -30,6 +30,8 @@ The tag format:
 {hub:<placement>:<field>:<index>}         {hub:home-blocks:title:2}
 {hub:<placement>:<field>:<index>:<lang>}  {hub:home-hero:title:1:en}
 {hub:type.<content type>:<field>:<index>} {hub:type.news:title:1}   newest news item
+{hub:post:<field>}                        {hub:post:data.weight}    the current post / each post of a query loop
+{hub:post.<slug or ID>:<field>}           {hub:post.ana-horvat:title}
 ```
 
 - **Heading** → `{hub:home-hero:title}`
@@ -52,6 +54,19 @@ The tag format:
 | `[hub_link to="article" text="Pročitaj više" class="more"]` | link to this site's copy of the article; `text` is literal text or a field name (`text="title"`) |
 | `[hub_loop placement="home-blocks" limit="6" wrap="div" class="grid"] … [/hub_loop]` | repeats its content for each item; inside, use the shortcodes without a placement |
 | `[hub_loop type="news" limit="3" empty="Nema novosti"] … [/hub_loop]` | latest news; `empty` = text when there are none |
+
+#### Which item a shortcode shows
+
+Every shortcode (`[hub]`, `[hub_image]`, `[hub_link]`, `[hub_map]`, `[hub_data]`) picks its item in this order:
+
+1. **`id="…"` or `slug="…"`**: that post on this site (a copy of a hub item, of any hub post type), e.g. `[hub_data slug="ana-horvat"]`, `[hub field="data.weight" id="123"]`. `id` is the post ID here.
+2. **`placement` / `type` / `tag`**: that hub section (`index="2"` for the 2nd item).
+3. **Inside `[hub_loop]`**: the loop's current item.
+4. **Nothing given**: the **current post**, i.e. the post that holds the data. That's the player on their own page, or each player in a Bricks query loop / theme loop. `[hub field="subtitle"]`, `[hub_image]` and `[hub_data]` need no source there.
+
+A post that isn't a copy of a hub item gives nothing.
+
+In Bricks the same goes as a tag source: `{hub:post:data.weight}` (current post, or each post of a query loop), `{hub:post.ana-horvat:title}` / `{hub:post.123:title}` (another one).
 
 **Fields:** `data.<name>` (see Data from the content), `title`, `subtitle`, `badge`, `excerpt`, `html` (the content, with its markup), `image` (URL), `image_full`, `image_alt`, `image_focus`, `cta_url`, `cta_label`, `cta2_url`, `cta2_label`, `date` (add `format="j.n.Y."`), `slug`, `id`, `lang`, `content_type`, and `link` — the URL of this site's copy of the article (empty if it isn't kept as an article).
 
@@ -85,7 +100,7 @@ Shows a block's data as a list — every value, or the ones you name, in your or
 
 Empty values are skipped (`show_empty="1"` keeps them), `empty="…"` is shown when there's nothing. Every item has a class `hub-data-<name>` for styling.
 
-**Which block?** Inside a post loop (Bricks query loop, a theme loop, a single post template) it's the current post — a player, an article copy. Inside `[hub_loop]` it's the current item. Otherwise give a source like `[hub]`: `placement=`, `type=`, `tag=`, `index=`.
+**Which block?** The same as every shortcode (see *Which item a shortcode shows*): the current post by default, or `id=` / `slug=` for another post, or a hub source (`placement=`, `type=`, `tag=`), or the current `[hub_loop]` item.
 
 **A list of players, each with a row of data points:** create a *Players* post type fed by the hub type `player` (Settings → Hub client → Post types), then in Bricks:
 
@@ -97,7 +112,7 @@ Section
    └─ Shortcode  [hub_data keys="position,number,height,weight" wrap="div"]
 ```
 
-The **Element creator → Post type list** pattern builds exactly this (rows, cards or table-like rows). Without Bricks: `[hub_loop type="player"]<h3>[hub field="title"]</h3>[hub_data][/hub_loop]`. A single value in Bricks: `{cf_hub_data_weight}`.
+The **Element creator → Post type list** pattern builds exactly this (rows, cards or table-like rows). Without Bricks: `[hub_loop type="player"]<h3>[hub field="title"]</h3>[hub_data][/hub_loop]`. A single value in Bricks: `{hub:post:data.weight}` (or `{cf_hub_data_weight}`).
 
 ### Tags
 

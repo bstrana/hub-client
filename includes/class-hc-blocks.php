@@ -14,6 +14,10 @@ defined('ABSPATH') || exit;
  * Bricks dynamic tags (text, image and link fields):
  *   {hub:home-hero:title}   {hub:home-blocks:title:2}   {hub:home-hero:image}   {hub:home-hero:cta_url}
  *   {hub:type.news:title:1}  — newest news item
+ *   {hub:post:data.weight}   — the current post (in a query loop: each post); post.<slug|ID> for another
+ *
+ * Without a source, shortcodes use the current post too: [hub_data], [hub field="subtitle"];
+ * id="…" or slug="…" picks another post.
  *
  * Data comes from a local store that only the hub's webhooks refresh, so
  * visitors never cause a request to the hub. See the Data section below.
@@ -567,7 +571,7 @@ class HC_Blocks {
 				return $ts ? esc_html(wp_date((string) ($a['format'] ?? get_option('date_format')), $ts)) : '';
 			case 'link':
 				// The local article page, when Hub Client keeps a copy of this item.
-				$local = class_exists('HC_Sync') ? HC_Sync::local_id((int) ($item['id'] ?? 0)) : 0;
+				$local = (int) ($item['post_id'] ?? 0) ?: (class_exists('HC_Sync') ? HC_Sync::local_id((int) ($item['id'] ?? 0)) : 0);
 				return $local && get_post_status($local) === 'publish' ? esc_url(get_permalink($local)) : '';
 		}
 		return '';
@@ -581,10 +585,20 @@ class HC_Blocks {
 
 	/* ---------------- Shortcodes ---------------- */
 
+	/**
+	 * Which item a shortcode shows:
+	 *   1. id="…" / slug="…"           that post on this site (a copy of a hub item)
+	 *   2. placement / type / tag      that hub section (index="2" for the 2nd item)
+	 *   3. inside [hub_loop]           the loop's current item
+	 *   4. nothing given               the current post — the one being shown, or the current
+	 *                                  post of a query loop (e.g. each player in a Bricks loop)
+	 */
 	private static function pick(array $a): ?array {
-		// Inside [hub_loop] without its own source: the current loop item.
-		if (self::$stack && empty($a['placement']) && empty($a['type']) && empty($a['tag'])) {
-			return end(self::$stack);
+		if (($a['id'] ?? '') !== '' || ($a['slug'] ?? '') !== '') {
+			return self::post_item(self::find_post((string) ($a['id'] ?? ''), (string) ($a['slug'] ?? '')), (string) ($a['lang'] ?? ''));
+		}
+		if (empty($a['placement']) && empty($a['type']) && empty($a['tag'])) {
+			return self::$stack ? end(self::$stack) : self::post_item(self::current_post(), (string) ($a['lang'] ?? ''));
 		}
 		// Same limit for every index so all fields of one placement share one cached request.
 		$items = self::items(['placement' => $a['placement'], 'type' => $a['type'], 'tag' => (string) ($a['tag'] ?? ''), 'lang' => $a['lang'], 'limit' => max(10, (int) $a['index']),
@@ -593,7 +607,7 @@ class HC_Blocks {
 	}
 
 	public static function sc_field($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'field' => 'title', 'index' => 1, 'lang' => '', 'upcoming' => '', 'format' => '', 'default' => ''], $atts, 'hub');
+		$a = shortcode_atts(['id' => '', 'slug' => '', 'placement' => '', 'type' => '', 'tag' => '', 'field' => 'title', 'index' => 1, 'lang' => '', 'upcoming' => '', 'format' => '', 'default' => ''], $atts, 'hub');
 		$item = self::pick($a);
 		$out  = $item ? self::value($item, self::field_key($a['field']), array_filter(['format' => $a['format']])) : '';
 		if ($out !== '') return $out;
@@ -603,7 +617,7 @@ class HC_Blocks {
 	}
 
 	public static function sc_image($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'size' => 'large', 'class' => '', 'loading' => 'lazy', 'sizes' => '100vw'], $atts, 'hub_image');
+		$a = shortcode_atts(['id' => '', 'slug' => '', 'placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'size' => 'large', 'class' => '', 'loading' => 'lazy', 'sizes' => '100vw'], $atts, 'hub_image');
 		$item  = self::pick($a);
 		$img   = $item['image'] ?? null;
 		if (!$img) return $item ? '' : self::hint('[hub_image]');
@@ -642,7 +656,7 @@ class HC_Blocks {
 	 * Always self-closing (no [/hub_link]), so it can't swallow the content after it.
 	 */
 	public static function sc_link($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'to' => 'cta', 'text' => '', 'class' => '', 'target' => ''], $atts, 'hub_link');
+		$a = shortcode_atts(['id' => '', 'slug' => '', 'placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'to' => 'cta', 'text' => '', 'class' => '', 'target' => ''], $atts, 'hub_link');
 		$item = self::pick($a);
 		if (!$item) return self::hint('[hub_link]');
 		// to => [link field, default text field, fallback text]
@@ -674,7 +688,7 @@ class HC_Blocks {
 	 * provider="osm" (default, OpenStreetMap: no cookies) or "google". link="" hides the link.
 	 */
 	public static function sc_map($atts): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'height' => 320, 'provider' => 'osm', 'class' => 'hub-map', 'link' => __('Directions', 'hub-client')], $atts, 'hub_map');
+		$a = shortcode_atts(['id' => '', 'slug' => '', 'placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '', 'height' => 320, 'provider' => 'osm', 'class' => 'hub-map', 'link' => __('Directions', 'hub-client')], $atts, 'hub_map');
 		$item = self::pick($a);
 		if (!$item) return self::hint('[hub_map]');
 		$lat = isset($item['map_lat']) && is_numeric($item['map_lat']) ? (float) $item['map_lat'] : null;
@@ -718,7 +732,7 @@ class HC_Blocks {
 	 * wrap: dl (default) | ul | table | div | none. Labels default to the name ("price_month" → "Price month").
 	 */
 	public static function sc_data($atts, $content = ''): string {
-		$a = shortcode_atts(['placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '',
+		$a = shortcode_atts(['id' => '', 'slug' => '', 'placement' => '', 'type' => '', 'tag' => '', 'index' => 1, 'lang' => '', 'upcoming' => '',
 			'key' => '', 'keys' => '', 'exclude' => '', 'labels' => '', 'wrap' => 'dl', 'class' => 'hub-data', 'empty' => '', 'show_empty' => ''], $atts, 'hub_data');
 		$data = self::data_for($a);
 
@@ -763,20 +777,75 @@ class HC_Blocks {
 		return '<' . $tag . ' class="' . esc_attr($a['class']) . '">' . $inner . '</' . $tag . '>';
 	}
 
-	/** The data points for [hub_data]: loop item, picked item, or the current post's copy. */
+	/** The data points for [hub_data] (same item choice as every other shortcode). */
 	private static function data_for(array $a): array {
-		$has_source = $a['placement'] !== '' || $a['type'] !== '' || $a['tag'] !== '';
-		if ($has_source || self::$stack) {
-			$item = self::pick($a);
-			return array_map('strval', (array) ($item['data'] ?? []));
-		}
+		$item = self::pick($a);
+		return array_map('strval', (array) ($item['data'] ?? []));
+	}
+
+	/* ---------------- Items from this site's posts ---------------- */
+
+	/** Post that "the current post" means right now (set by Bricks for its query loops). */
+	private static int $post_ctx = 0;
+
+	public static function current_post(): int {
+		if (self::$post_ctx) return self::$post_ctx;
 		$id = (int) get_the_ID();
-		if (!$id) return [];
-		$out = [];
-		foreach (array_filter(explode(',', (string) get_post_meta($id, '_hub_data_keys', true))) as $k) {
-			$out[$k] = (string) get_post_meta($id, 'hub_data_' . $k, true);
+		if (!$id && is_singular()) $id = (int) get_queried_object_id();
+		return $id;
+	}
+
+	/** A copy of a hub item on this site, by post ID or slug (any of the hub post types). */
+	public static function find_post(string $id, string $slug): int {
+		if ($id !== '') {
+			$id = (int) $id;
+			return $id > 0 && get_post_meta($id, '_hub_id', true) ? $id : 0;
 		}
-		return $out;
+		$slug = sanitize_title($slug);
+		if ($slug === '' || !class_exists('HC_Sync')) return 0;
+		static $memo = [];
+		if (isset($memo[$slug])) return $memo[$slug];
+		$q = ['name' => $slug, 'post_type' => HC_Sync::post_types(), 'post_status' => 'publish', 'numberposts' => 1, 'fields' => 'ids', 'meta_key' => '_hub_id', 'no_found_rows' => true];
+		// Same slug in several languages (Polylang): prefer the current one, else any.
+		$found = get_posts($q + ['suppress_filters' => false]) ?: get_posts($q + ['suppress_filters' => true, 'lang' => '']);
+		return $memo[$slug] = (int) ($found[0] ?? 0);
+	}
+
+	/**
+	 * A local copy as a hub item, so every field works on it: [hub field="subtitle"],
+	 * [hub_image], [hub_link to="cta"], [hub_map], [hub_data] … Only copies of hub items
+	 * (posts with _hub_id); other posts give null. lang="xx" switches to that translation.
+	 */
+	public static function post_item(int $id, string $lang = ''): ?array {
+		if (!$id || !($hub_id = (int) get_post_meta($id, '_hub_id', true))) return null;
+		if ($lang !== '' && function_exists('pll_get_post') && ($t = (int) pll_get_post($id, sanitize_key($lang)))) $id = $t;
+		$p = get_post($id);
+		if (!$p) return null;
+		$m   = fn(string $k) => (string) get_post_meta($id, $k, true);
+		$iso = fn(string $local) => $local !== '' ? get_gmt_from_date($local, 'Y-m-d\TH:i:s\Z') : '';
+		$data = [];
+		foreach (array_filter(explode(',', $m('_hub_data_keys'))) as $k) $data[$k] = $m('hub_data_' . $k);
+		$image = null;
+		if ($thumb = (int) get_post_thumbnail_id($id)) {
+			$image = ['local_id' => $thumb, 'alt' => (string) get_post_meta($thumb, '_wp_attachment_image_alt', true),
+				'url' => (string) wp_get_attachment_image_url($thumb, 'large'), 'full' => (string) wp_get_attachment_url($thumb)];
+		}
+		$tags = class_exists('HC_Sync') ? get_the_terms($id, HC_Sync::tag_taxonomy($p->post_type)) : [];
+		$types = array_filter(explode(',', $m('_hub_types')));
+		return [
+			'id' => $hub_id, 'post_id' => $id, 'title' => get_the_title($p), 'slug' => $p->post_name,
+			'subtitle' => $m('hub_subtitle'), 'badge' => $m('hub_badge'), 'excerpt' => $p->post_excerpt,
+			'html' => $p->post_content, 'lang' => $m('_hub_lang'), 'content_type' => (string) ($types[0] ?? ''),
+			'date' => $p->post_date_gmt !== '0000-00-00 00:00:00' ? str_replace(' ', 'T', $p->post_date_gmt) . 'Z' : '',
+			'image' => $image, 'image_focus' => $m('hub_image_focus'),
+			'cta_url' => $m('hub_cta_url'), 'cta_label' => $m('hub_cta_label'), 'cta2_url' => $m('hub_cta2_url'), 'cta2_label' => $m('hub_cta2_label'),
+			'event_start' => $iso($m('hub_event_start')), 'event_end' => $iso($m('hub_event_end')),
+			'location' => $m('hub_location'), 'map_lat' => $m('hub_map_lat'), 'map_lng' => $m('hub_map_lng'),
+			'map_url' => $m('hub_map_url'), 'stream_url' => $m('hub_stream_url'),
+			'seo_title' => $m('hub_seo_title'), 'seo_description' => $m('hub_seo_description'),
+			'tag_names' => is_array($tags) ? wp_list_pluck($tags, 'name') : [],
+			'data' => $data,
+		];
 	}
 
 	public static function sc_loop($atts, $content = ''): string {
@@ -872,6 +941,13 @@ class HC_Blocks {
 				$tags[] = ['name' => '{hub:next.' . $slug . ':' . $field . '}', 'label' => $label, 'group' => $group];
 			}
 		}
+		// The current post (a hub copy: article, player …), also each post of a query loop.
+		$group = __('Hub · this post', 'hub-client');
+		foreach ($placement_fields + ['link' => __('Its page link', 'hub-client'), 'date' => __('Date', 'hub-client')] + $event_fields as $field => $label) {
+			$tags[] = ['name' => '{hub:post:' . $field . '}', 'label' => $label, 'group' => $group];
+		}
+		$tags[] = ['name' => '{hub:post:data.weight}', 'label' => __('A data point — data.<name>', 'hub-client'), 'group' => $group];
+		$tags[] = ['name' => '{hub:post.ana-horvat:title}', 'label' => __('Another post — post.<slug> or post.<ID>', 'hub-client'), 'group' => 'Hub · tips'];
 		// How-to entries for the index / language suffixes.
 		$first = (string) (array_key_first($place) ?: 'home-blocks');
 		$tags[] = ['name' => '{hub:' . $first . ':title:2}', 'label' => __('2nd item — add :2, :3 … to any tag', 'hub-client'), 'group' => 'Hub · tips'];
@@ -897,6 +973,14 @@ class HC_Blocks {
 		[, $source, $field] = $parts;
 		$index = max(1, (int) ($parts[3] ?? 1));
 		$lang  = (string) ($parts[4] ?? '');
+		if ($source === 'post' || str_starts_with($source, 'post.')) {
+			// post = the current post (each post of a query loop); post.123 / post.ana-horvat = that one
+			$ref  = (string) substr($source, 5);
+			$pid  = $source === 'post' ? self::current_post() : (ctype_digit($ref) ? self::find_post($ref, '') : self::find_post('', $ref));
+			$item = self::post_item($pid, $lang);
+			if (!$item) return $context === 'image' ? [] : ($context === 'text' ? self::hint('{' . $tag . '}') : '');
+			return self::render_resolved($item, $field, $context);
+		}
 		if (str_starts_with($source, 'next.')) {          // next.event = upcoming events, soonest first
 			$q = ['type' => substr($source, 5), 'upcoming' => true, 'lang' => $lang, 'limit' => max(10, $index)];
 		} elseif (str_starts_with($source, 'tag.')) {             // tag.summer-camp = newest items with that tag
@@ -908,7 +992,11 @@ class HC_Blocks {
 		}
 		$item = self::items($q)[$index - 1] ?? null;
 		if (!$item) return $context === 'image' ? [] : ($context === 'text' ? self::hint('{' . $tag . '}') : '');
+		return self::render_resolved($item, $field, $context);
+	}
 
+	/** One field of a resolved item, in the form Bricks wants for the context. */
+	private static function render_resolved(array $item, string $field, string $context) {
 		if ($context === 'image') {
 			// An attachment ID lets Bricks output its own sizes and srcset.
 			if ($lid = self::local_image($item)) return [$lid];
@@ -921,15 +1009,24 @@ class HC_Blocks {
 
 	public static function bricks_tag($tag, $post = null, $context = 'text') {
 		if (!is_string($tag) || !str_starts_with($tag, 'hub:')) return $tag;
-		$v = self::resolve($tag, (string) $context);
+		$v = self::with_post($post, fn() => self::resolve($tag, (string) $context));
 		return $v ?? $tag;
 	}
 
 	public static function bricks_content($content, $post = null, $context = 'text') {
 		if (!is_string($content) || !str_contains($content, '{hub:')) return $content;
-		return preg_replace_callback('/\{(hub:[a-z0-9_.\-]+:[a-z][a-z0-9_.\-]*(?::\d+)?(?::[a-z]{2,3})?)\}/i', function ($m) {
+		return self::with_post($post, fn() => preg_replace_callback('/\{(hub:[a-z0-9_.\-]+:[a-z][a-z0-9_.\-]*(?::\d+)?(?::[a-z]{2,3})?)\}/i', function ($m) {
 			$v = self::resolve($m[1], 'text');
 			return is_string($v) ? $v : '';
-		}, $content);
+		}, $content));
+	}
+
+	/** Run with Bricks' post (the loop's current post) as "the current post". */
+	private static function with_post($post, callable $fn) {
+		$id = $post instanceof WP_Post ? (int) $post->ID : (is_numeric($post) ? (int) $post : 0);
+		if (!$id) return $fn();
+		$prev = self::$post_ctx;
+		self::$post_ctx = $id;
+		try { return $fn(); } finally { self::$post_ctx = $prev; }
 	}
 }
